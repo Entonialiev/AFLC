@@ -1,4 +1,4 @@
-```markdown
+
 # 🔁 AFLC — Adaptive Feedback Loop Core
 
 [![CI Tests](https://github.com/Entonialiev/AFLC/actions/workflows/test.yml/badge.svg)](https://github.com/Entonialiev/AFLC/actions/workflows/test.yml)
