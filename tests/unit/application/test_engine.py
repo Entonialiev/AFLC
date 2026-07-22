@@ -62,12 +62,16 @@ class TestExecutionEngine:
         assert self.repository.find_by_id(execution.execution_id) is not None
     
     def test_add_observation(self):
+        # Сначала создаём и отправляем в обработку
         execution = self.engine.submit_action(
             agent_id="agent-1",
             endpoint="/api/test",
             method="GET",
             payload={}
         )
+        execution.submit()
+        execution.start_processing()
+        self.repository.save(execution)
         
         execution = self.engine.add_observation(
             execution_id=execution.execution_id,
@@ -80,12 +84,16 @@ class TestExecutionEngine:
         assert execution.observations[0].value == 150.0
     
     def test_add_finding(self):
+        # Сначала создаём и отправляем в обработку
         execution = self.engine.submit_action(
             agent_id="agent-1",
             endpoint="/api/test",
             method="GET",
             payload={}
         )
+        execution.submit()
+        execution.start_processing()
+        self.repository.save(execution)
         
         execution = self.engine.add_finding(
             execution_id=execution.execution_id,
@@ -108,6 +116,11 @@ class TestExecutionEngine:
             payload={"user": "admin"}
         )
         
+        # Переводим в состояние RUNNING
+        execution.submit()
+        execution.start_processing()
+        self.repository.save(execution)
+        
         # Process
         execution = self.engine.add_observation(
             execution_id=execution.execution_id,
@@ -123,6 +136,10 @@ class TestExecutionEngine:
             reason="High latency",
             tags=["performance"]
         )
+        
+        # Завершаем обработку
+        execution.complete_processing()
+        self.repository.save(execution)
         
         execution = self.engine.complete_assessment(
             execution_id=execution.execution_id,
@@ -142,6 +159,44 @@ class TestExecutionEngine:
             execution_id=execution.execution_id,
             text="Blocked due to high risk",
             details={"risk": 0.8}
+        )
+        
+        execution = self.engine.archive_execution(execution.execution_id)
+        
+        assert execution.status == ExecutionStatus.ARCHIVED
+    
+    def test_archive_execution(self):
+        execution = self.engine.submit_action(
+            agent_id="agent-1",
+            endpoint="/api/test",
+            method="GET",
+            payload={}
+        )
+        
+        execution.submit()
+        execution.start_processing()
+        execution.complete_processing()
+        self.repository.save(execution)
+        
+        # Добавляем риск и решение
+        execution = self.engine.complete_assessment(
+            execution_id=execution.execution_id,
+            risk_value=0.5,
+            confidence=0.9,
+            components={"rule": 0.5}
+        )
+        
+        execution = self.engine.make_decision(
+            execution_id=execution.execution_id,
+            action="allow",
+            reason="Low risk",
+            severity=0.3
+        )
+        
+        execution = self.engine.add_explanation(
+            execution_id=execution.execution_id,
+            text="Allowed due to low risk",
+            details={"risk": 0.5}
         )
         
         execution = self.engine.archive_execution(execution.execution_id)
