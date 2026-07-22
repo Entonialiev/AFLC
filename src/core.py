@@ -1,6 +1,6 @@
 """
 AFLC - Adaptive Feedback Loop Core
-Version: 0.7.2 (fixed circular import)
+Version: 0.7.3 (final circular import fix)
 """
 
 from typing import Dict, List, Optional, Any, Callable, Union
@@ -19,8 +19,6 @@ from .exceptions import AFLCError, PipelineError, ConfigurationError
 
 logger = logging.getLogger("aflc")
 
-
-# --- ГЛАВНЫЙ ОРКЕСТРАТОР ---
 
 class AdaptiveFeedbackLoopCore:
     """
@@ -63,7 +61,6 @@ class AdaptiveFeedbackLoopCore:
         self._setup_default_event_handlers()
     
     def _setup_default_event_handlers(self):
-        """Настраивает стандартные обработчики событий"""
         @self.event_bus.subscribe("action_started")
         def on_action_started(event: Event):
             logger.debug(f"Action started: {event.data.get('action_id')}")
@@ -78,7 +75,6 @@ class AdaptiveFeedbackLoopCore:
     
     @classmethod
     def from_config(cls, config_path: str) -> 'AdaptiveFeedbackLoopCore':
-        """Создаёт экземпляр AFLC из YAML-конфигурации."""
         import yaml
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
@@ -89,17 +85,14 @@ class AdaptiveFeedbackLoopCore:
     
     @classmethod
     def from_config_dict(cls, data: Dict[str, Any]) -> 'AdaptiveFeedbackLoopCore':
-        """Создаёт экземпляр AFLC из словаря конфигурации через Plugin Registry."""
         from .history import MemoryHistory, SQLiteHistory
         
         agent_id = data.get("agent_id", "default-agent")
         flc = cls(agent_id=agent_id, config=data)
         
-        # Регистрируем детекторы из конфига через реестр
         for name, detector_config in data.get("detectors", {}).items():
             if not detector_config.get("enabled", True):
                 continue
-            
             detector = registry.create_detector(name, detector_config.get("params", {}))
             if detector:
                 flc.register_detector(detector)
@@ -107,30 +100,25 @@ class AdaptiveFeedbackLoopCore:
             else:
                 logger.warning(f"Detector not found in registry: {name}")
         
-        # Коррелятор
         correlator_name = data.get("correlator", {}).get("type", "weighted")
         correlator = registry.create_correlator(correlator_name, data.get("correlator", {}))
         if correlator:
             flc.register_correlator(correlator)
         
-        # Risk Engine
         risk_engine = registry.create_risk_engine(data.get("risk", {}))
         if risk_engine:
             flc.register_risk_engine(risk_engine)
         
-        # Policy
         policy_name = data.get("policy", {}).get("type", "default")
         policy = registry.create_policy(policy_name, data.get("policy", {}))
         if policy:
             flc.register_policy(policy)
         
-        # Memory
         memory_config = data.get("memory", {})
         memory = registry.create_memory(memory_config.get("type", "default"), memory_config)
         if memory:
             flc.register_memory(memory)
         
-        # History Backend
         history_config = data.get("history", {})
         history_type = history_config.get("type", "memory")
         history_params = history_config.get("params", {})
@@ -179,7 +167,6 @@ class AdaptiveFeedbackLoopCore:
         return Pipeline(self)
     
     def _prepare_action(self, action_func: Callable, *args, **kwargs) -> ActionContext:
-        """Общая подготовка контекста (без дублирования)"""
         self.action_counter += 1
         action_id = f"{self.agent_id}-{self.action_counter:04d}"
         
@@ -211,14 +198,12 @@ class AdaptiveFeedbackLoopCore:
         )
     
     def _finalize(self, result_context: ActionContext) -> Decision:
-        """Общая финализация (без дублирования)"""
         decision = getattr(result_context, '_decision', None)
         if decision is None:
             raise PipelineError("Pipeline did not produce a decision")
         
         self.last_decision = decision
         
-        # Сохраняем в историю
         if self.history_backend:
             self.history_backend.add({
                 "action_id": result_context.action_id,
@@ -236,26 +221,22 @@ class AdaptiveFeedbackLoopCore:
         return decision
     
     def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
-        """Синхронное выполнение действия."""
         context = self._prepare_action(action_func, *args, **kwargs)
         result_context = self._build_pipeline().execute(context)
         return self._finalize(result_context)
     
     async def async_execute(self, action_func: Callable, *args, **kwargs) -> Decision:
-        """Асинхронное выполнение действия."""
         context = self._prepare_action(action_func, *args, **kwargs)
         result_context = await self._build_pipeline().execute_async(context)
         return self._finalize(result_context)
     
     def reset(self):
-        """Сбрасывает состояние."""
         self.action_counter = 0
         self.last_decision = None
         if self.history_backend:
             self.history_backend.clear()
     
     def get_stats(self) -> Dict[str, Any]:
-        """Возвращает статистику работы."""
         stats = {
             "agent_id": self.agent_id,
             "actions": self.action_counter,
@@ -273,32 +254,32 @@ class AdaptiveFeedbackLoopCore:
         return stats
 
 
-# --- ВСТРОЕННЫЕ РЕАЛИЗАЦИИ ---
-
-class DefaultPolicy(Policy):
-    def decide(self, context: ActionContext, detection: Optional[Detection],
-               risk: RiskScore) -> Decision:
-        if detection and detection.score > 0.3:
-            return Decision(
-                action="pause",
-                reason=detection.reason,
-                severity=detection.score,
-                confidence=detection.confidence,
-                risk_score=risk.value,
-                explanation=f"Anomaly detected by {detection.source}"
-            )
-        return Decision(
-            action="continue",
-            reason="No anomalies detected",
-            severity=0.0,
-            confidence=1.0,
-            risk_score=0.0,
-            explanation="All systems nominal"
-        )
-
-
-class SimpleCorrelator(Correlator):
-    def correlate(self, detections: List[Detection]) -> Optional[Detection]:
-        if not detections:
-            return None
-        return max(detections, key=lambda x: x.score)
+if __name__ == "__main__":
+    print("🔁 AFLC v0.7.3 — Circular Import Fixed")
+    print("=" * 50)
+    
+    flc = AdaptiveFeedbackLoopCore(agent_id="demo-agent")
+    
+    # Регистрируем через реестр
+    policy = registry.create_policy("default")
+    correlator = registry.create_correlator("simple")
+    
+    if policy:
+        flc.register_policy(policy)
+    if correlator:
+        flc.register_correlator(correlator)
+    
+    from .history import MemoryHistory
+    flc.register_history_backend(MemoryHistory(max_size=100))
+    
+    def my_action(delay_ms=100):
+        import time
+        time.sleep(delay_ms / 1000.0)
+        return {"status": "ok"}
+    
+    print("\n🔄 Выполнение действий:")
+    for i in range(3):
+        decision = flc.execute(my_action, 50 + i * 10, endpoint="/api/test", method="GET")
+        print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
+    
+    print(f"\n📊 Статистика: {flc.get_stats()}")
