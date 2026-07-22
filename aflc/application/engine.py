@@ -51,6 +51,11 @@ class ExecutionEngine:
         
         execution.start_processing()
         self.repository.save(execution)
+        
+        # Публикуем события
+        for event in execution.get_events():
+            self.event_bus.publish(event)
+        
         return execution
     
     def complete_processing(self, execution_id: str) -> Execution:
@@ -61,6 +66,11 @@ class ExecutionEngine:
         
         execution.complete_processing()
         self.repository.save(execution)
+        
+        # Публикуем события
+        for event in execution.get_events():
+            self.event_bus.publish(event)
+        
         return execution
     
     def fail_processing(self, execution_id: str, reason: str) -> Execution:
@@ -71,6 +81,11 @@ class ExecutionEngine:
         
         execution.fail_processing(reason)
         self.repository.save(execution)
+        
+        # Публикуем события
+        for event in execution.get_events():
+            self.event_bus.publish(event)
+        
         return execution
     
     def add_observation(
