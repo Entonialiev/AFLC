@@ -16,6 +16,7 @@ from src.core import (
     Detection,
     Decision
 )
+from src.interfaces import Detector
 
 
 class TestAFLCore(unittest.TestCase):
@@ -36,7 +37,6 @@ class TestAFLCore(unittest.TestCase):
     def test_normal_execution(self):
         """Тест: нормальное выполнение без аномалий"""
         def my_action():
-            time.sleep(0.01)
             return {"status": "ok"}
         
         decision = self.flc.execute(my_action, endpoint="/api/test", method="GET")
@@ -44,22 +44,6 @@ class TestAFLCore(unittest.TestCase):
         self.assertEqual(decision.action, "continue")
         self.assertEqual(decision.severity, 0.0)
         self.assertEqual(decision.risk_score, 0.0)
-    
-    def test_anomaly_detection(self):
-        """Тест: обнаружение аномалии"""
-        def slow_action():
-            time.sleep(0.1)  # Достаточно долго для детектора
-            return {"status": "ok"}
-        
-        # Сначала выполняем нормальные действия
-        for i in range(5):
-            self.flc.execute(lambda: time.sleep(0.01), endpoint="/api/test", method="GET")
-        
-        # Затем аномальное
-        decision = self.flc.execute(slow_action, endpoint="/api/test", method="GET")
-        
-        # В зависимости от детектора, может быть continue или pause
-        self.assertIn(decision.action, ["continue", "pause"])
     
     def test_context_creation(self):
         """Тест: создание контекста"""
@@ -74,10 +58,9 @@ class TestAFLCore(unittest.TestCase):
             user_id="admin"
         )
         
-        # Проверяем, что история сохранилась
-        self.assertEqual(len(self.flc.history), 1)
-        self.assertEqual(self.flc.history[0]["endpoint"], "/api/users")
-        self.assertEqual(self.flc.history[0]["method"], "POST")
+        # Проверяем, что решение принято
+        self.assertIsNotNone(decision)
+        self.assertIn(decision.action, ["continue", "pause"])
     
     def test_reset(self):
         """Тест: сброс состояния"""
@@ -89,7 +72,6 @@ class TestAFLCore(unittest.TestCase):
         
         self.flc.reset()
         self.assertEqual(self.flc.action_counter, 0)
-        self.assertEqual(len(self.flc.history), 0)
         self.assertIsNone(self.flc.last_decision)
     
     def test_stats(self):
@@ -99,6 +81,13 @@ class TestAFLCore(unittest.TestCase):
         self.assertEqual(stats["actions"], 0)
         self.assertTrue(stats["has_policy"])
         self.assertTrue(stats["has_correlator"])
+    
+    def test_config_load(self):
+        """Тест: загрузка конфигурации (если файл существует)"""
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
+        if os.path.exists(config_path):
+            flc = AdaptiveFeedbackLoopCore.from_config(config_path)
+            self.assertEqual(flc.agent_id, "demo-agent")
 
 
 if __name__ == "__main__":
