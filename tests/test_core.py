@@ -8,11 +8,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import unittest
 import time
-from src.core import (
-    AdaptiveFeedbackLoopCore,
-    DefaultPolicy,
-    SimpleCorrelator
-)
+from src.core import AdaptiveFeedbackLoopCore
+from src.defaults import DefaultPolicy, SimpleCorrelator
 from src.models import ActionContext, Detection, Decision
 from src.interfaces import Detector
 
