@@ -1,6 +1,6 @@
 """
 Plugin Registry для AFLC
-Version: 2.1.2 (fixed parameter validation)
+Version: 2.1.3 (fixed object.__init__ handling)
 """
 
 from typing import Dict, Type, Optional, Any, List, Callable, Tuple
@@ -186,11 +186,11 @@ class PluginRegistry:
     def _validate_plugin_class(self, plugin_class: Type) -> None:
         """
         Проверяет, что конструктор плагина совместим с системой.
-        Допускаются:
-        - __init__(self) — без параметров (или с параметрами по умолчанию)
-        - __init__(self, config: Optional[Dict] = None)
-        - __init__(self, **kwargs)
         """
+        # Пропускаем валидацию для классов без переопределённого __init__
+        if plugin_class.__init__ is object.__init__:
+            return
+        
         sig = inspect.signature(plugin_class.__init__)
         params = list(sig.parameters.values())
         
@@ -209,7 +209,6 @@ class PluginRegistry:
             is_kwargs = param.kind == inspect.Parameter.VAR_KEYWORD
             has_default = param.default != inspect.Parameter.empty
             
-            # Если это config или kwargs, или параметр с дефолтом — OK
             if is_config or is_kwargs or has_default:
                 return
             
@@ -332,7 +331,6 @@ class PluginRegistry:
         self.register("history_backends", name, backend_class, metadata)
     
     def register_risk_engine(self, name: str, risk_class: Type, **kwargs):
-        """Регистрирует Risk Engine плагин"""
         metadata = PluginMetadata(
             name=name,
             version=kwargs.get("version", "1.0.0"),
