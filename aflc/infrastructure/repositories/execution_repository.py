@@ -48,6 +48,15 @@ class SQLiteExecutionRepository(ExecutionRepository):
 
     def _serialize_execution(self, execution: Execution) -> Dict[str, Any]:
         """Serialize Execution to dict for storage."""
+        # Сериализуем decision, обрабатывая Enum
+        decision_data = None
+        if execution.decision:
+            decision_data = {
+                "action": execution.decision["action"].value if isinstance(execution.decision["action"], DecisionAction) else execution.decision["action"],
+                "reason": execution.decision["reason"],
+                "severity": execution.decision["severity"]
+            }
+
         return {
             "execution_id": execution.execution_id,
             "status": execution.status.value,
@@ -90,7 +99,7 @@ class SQLiteExecutionRepository(ExecutionRepository):
                 "confidence": execution.risk_score.confidence,
                 "components": execution.risk_score.components
             } if execution.risk_score else None,
-            "decision": execution.decision,
+            "decision": decision_data,
             "explanation": {
                 "text": execution.explanation.text,
                 "details": execution.explanation.details
@@ -158,7 +167,12 @@ class SQLiteExecutionRepository(ExecutionRepository):
             )
 
         # Восстанавливаем decision
-        execution.decision = data.get("decision")
+        if data.get("decision"):
+            execution.decision = {
+                "action": DecisionAction(data["decision"]["action"]),
+                "reason": data["decision"]["reason"],
+                "severity": data["decision"]["severity"]
+            }
 
         # Восстанавливаем explanation
         if data.get("explanation"):
