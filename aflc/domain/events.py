@@ -11,7 +11,7 @@ from .value_objects import Finding, Observation, Explanation, Action
 from .enums import DecisionAction, EventType
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DomainEvent:
     """Base domain event."""
     event_id: str = field(default_factory=lambda: str(uuid4()))
@@ -20,23 +20,21 @@ class DomainEvent:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ExecutionCreated(DomainEvent):
     """Execution has been created."""
     command_id: str = ""
     action: Action = field(default_factory=lambda: None)
 
     def __post_init__(self):
-        # Убеждаемся, что все обязательные поля заполнены
         if not self.command_id:
             raise ValueError("command_id is required")
         if self.action is None:
             raise ValueError("action is required")
-        # Устанавливаем тип события
         object.__setattr__(self, "event_type", EventType.EXECUTION_CREATED)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ObservationAdded(DomainEvent):
     """Observation has been added to execution."""
     observation: Observation = field(default_factory=lambda: None)
@@ -47,7 +45,7 @@ class ObservationAdded(DomainEvent):
         object.__setattr__(self, "event_type", EventType.OBSERVATION_ADDED)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class FindingProduced(DomainEvent):
     """Finding has been produced."""
     finding: Finding = field(default_factory=lambda: None)
@@ -58,7 +56,7 @@ class FindingProduced(DomainEvent):
         object.__setattr__(self, "event_type", EventType.FINDING_PRODUCED)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AssessmentCompleted(DomainEvent):
     """Assessment has been completed."""
     findings: List[Finding] = field(default_factory=list)
@@ -70,7 +68,7 @@ class AssessmentCompleted(DomainEvent):
         object.__setattr__(self, "event_type", EventType.ASSESSMENT_COMPLETED)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DecisionMade(DomainEvent):
     """Decision has been made."""
     action: DecisionAction = field(default=DecisionAction.ALLOW)
@@ -85,7 +83,7 @@ class DecisionMade(DomainEvent):
         object.__setattr__(self, "event_type", EventType.DECISION_MADE)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ExplanationGenerated(DomainEvent):
     """Explanation has been generated."""
     explanation: Explanation = field(default_factory=lambda: None)
@@ -96,7 +94,7 @@ class ExplanationGenerated(DomainEvent):
         object.__setattr__(self, "event_type", EventType.EXPLANATION_GENERATED)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ExecutionArchived(DomainEvent):
     """Execution has been archived."""
 
