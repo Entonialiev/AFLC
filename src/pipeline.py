@@ -1,6 +1,6 @@
 """
 Pipeline for AFLC — единый конвейер выполнения действий
-Version: 1.0.0
+Version: 1.0.1
 """
 
 from typing import List, Optional, Dict, Any, Callable
@@ -13,15 +13,11 @@ from .core import (
     ActionContext,
     Detection,
     Decision,
-    RiskScore,
-    Detector,
-    AsyncDetector,
-    Correlator,
-    Policy,
-    AsyncPolicy,
-    Predictor,
-    Memory,
-    Explainer
+    RiskScore
+)
+from .interfaces import (
+    Detector, AsyncDetector, Correlator, Policy, AsyncPolicy,
+    Predictor, Memory, Explainer
 )
 from .events import EventBus, Event
 from .exceptions import PipelineError, DetectorError
