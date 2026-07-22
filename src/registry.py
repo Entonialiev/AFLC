@@ -1,6 +1,6 @@
 """
 Plugin Registry для AFLC
-Version: 2.1.3 (fixed object.__init__ handling)
+Version: 2.1.4 (fixed deprecation warning)
 """
 
 from typing import Dict, Type, Optional, Any, List, Callable, Tuple
@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import inspect
 import logging
 import sys
+import warnings
 
 from .interfaces import (
     Detector, AsyncDetector, Correlator, Policy, AsyncPolicy,
@@ -240,6 +241,12 @@ class PluginRegistry:
             logger.warning(
                 f"Plugin {category}/{name} is deprecated since {info.metadata.deprecated_since}. "
                 f"Use {info.metadata.replaced_by} instead."
+            )
+            warnings.warn(
+                f"Plugin {category}/{name} is deprecated since {info.metadata.deprecated_since}. "
+                f"Use {info.metadata.replaced_by} instead.",
+                DeprecationWarning,
+                stacklevel=2
             )
         
         try:
