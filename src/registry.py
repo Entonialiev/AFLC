@@ -1,12 +1,13 @@
 """
 Plugin Registry для AFLC
-Version: 2.0.0 (unified API)
+Version: 2.1.0 (hardened plugin SDK)
 """
 
-from typing import Dict, Type, Optional, Any, List, Callable
+from typing import Dict, Type, Optional, Any, List, Callable, Tuple
 from dataclasses import dataclass, field
 import inspect
 import logging
+import sys
 
 from .interfaces import (
     Detector, AsyncDetector, Correlator, Policy, AsyncPolicy,
@@ -17,13 +18,24 @@ logger = logging.getLogger("aflc.registry")
 
 
 @dataclass
+class PluginMetadata:
+    """Метаданные плагина для версионирования и совместимости"""
+    name: str
+    version: str
+    min_python_version: Tuple[int, int, int] = (3, 9, 0)
+    dependencies: List[str] = field(default_factory=list)
+    description: str = ""
+    tags: List[str] = field(default_factory=list)
+    deprecated: bool = False
+    deprecated_since: Optional[str] = None
+    replaced_by: Optional[str] = None
+
+
+@dataclass
 class PluginInfo:
     name: str
     plugin_class: Type
-    description: str = ""
-    version: str = "1.0.0"
-    tags: List[str] = field(default_factory=list)
-    dependencies: List[str] = field(default_factory=list)
+    metadata: PluginMetadata
 
 
 class PluginRegistry:
@@ -32,7 +44,7 @@ class PluginRegistry:
     
     Все плагины следуют единому контракту:
     - Конструктор принимает только `config: Optional[Dict] = None`
-    - Имеют методы `initialize()` и `shutdown()`
+    - Имеют методы `initialize()` и `shutdown()`, если реализуют Plugin
     """
     
     _instance = None
@@ -48,7 +60,6 @@ class PluginRegistry:
             return
         self._initialized = True
         
-        self._plugins: Dict[str, PluginInfo] = {}
         self._categories: Dict[str, Dict[str, PluginInfo]] = {
             "detectors": {},
             "async_detectors": {},
@@ -58,7 +69,8 @@ class PluginRegistry:
             "predictors": {},
             "memory": {},
             "explainers": {},
-            "history_backends": {}
+            "history_backends": {},
+            "risk_engines": {}
         }
         
         self._initialized_plugins: Dict[str, Plugin] = {}
@@ -66,7 +78,6 @@ class PluginRegistry:
         self._register_builtins()
     
     def _register_builtins(self):
-        """Регистрирует встроенные плагины"""
         from .detectors import RuleDetector, StatisticalDetector
         from .correlator import Correlator as DefaultCorrelator
         from .risk import RiskEngine
@@ -75,81 +86,183 @@ class PluginRegistry:
         from .defaults import DefaultPolicy, SimpleCorrelator
         
         # Детекторы
-        self.register("detectors", "rule", RuleDetector, "Rule-based detector")
-        self.register("detectors", "statistical", StatisticalDetector, "EWMA-based adaptive detector")
+        self.register(
+            "detectors", "rule", RuleDetector,
+            metadata=PluginMetadata(
+                name="rule",
+                version="1.0.0",
+                description="Rule-based detector (timeout, size, errors)"
+            )
+        )
+        self.register(
+            "detectors", "statistical", StatisticalDetector,
+            metadata=PluginMetadata(
+                name="statistical",
+                version="1.0.0",
+                description="EWMA-based adaptive detector"
+            )
+        )
         
         # Корреляторы
-        self.register("correlators", "weighted", DefaultCorrelator, "Weighted correlation")
-        self.register("correlators", "simple", SimpleCorrelator, "Simple max-score correlator")
+        self.register(
+            "correlators", "weighted", DefaultCorrelator,
+            metadata=PluginMetadata(
+                name="weighted",
+                version="1.0.0",
+                description="Weighted correlation"
+            )
+        )
+        self.register(
+            "correlators", "simple", SimpleCorrelator,
+            metadata=PluginMetadata(
+                name="simple",
+                version="1.0.0",
+                description="Simple max-score correlator"
+            )
+        )
         
         # Политики
-        self.register("policies", "default", DefaultPolicy, "Default policy")
+        self.register(
+            "policies", "default", DefaultPolicy,
+            metadata=PluginMetadata(
+                name="default",
+                version="1.0.0",
+                description="Default threshold-based policy"
+            )
+        )
         
         # Risk Engine
-        self.register("risk_engines", "default", RiskEngine, "Default risk engine")
+        self.register(
+            "risk_engines", "default", RiskEngine,
+            metadata=PluginMetadata(
+                name="default",
+                version="1.0.0",
+                description="Default risk engine"
+            )
+        )
         
         # History Backends
-        self.register("history_backends", "memory", MemoryHistory, "In-memory history")
-        self.register("history_backends", "sqlite", SQLiteHistory, "SQLite history")
+        self.register(
+            "history_backends", "memory", MemoryHistory,
+            metadata=PluginMetadata(
+                name="memory",
+                version="1.0.0",
+                description="In-memory history"
+            )
+        )
+        self.register(
+            "history_backends", "sqlite", SQLiteHistory,
+            metadata=PluginMetadata(
+                name="sqlite",
+                version="1.0.0",
+                description="SQLite history"
+            )
+        )
     
-    def register(self, category: str, name: str, plugin_class: Type,
-                 description: str = "", version: str = "1.0.0",
-                 tags: List[str] = None, dependencies: List[str] = None) -> None:
+    def register(
+        self,
+        category: str,
+        name: str,
+        plugin_class: Type,
+        metadata: Optional[PluginMetadata] = None
+    ) -> None:
         """
         Унифицированная регистрация плагина.
-        
-        Args:
-            category: категория (detectors, policies, etc.)
-            name: уникальное имя плагина
-            plugin_class: класс плагина
-            description: описание
-            version: версия
-            tags: теги
-            dependencies: список зависимостей
         """
         if category not in self._categories:
-            self._categories[category] = {}
+            raise ValueError(f"Unknown category: {category}")
+        
+        if name in self._categories[category]:
+            logger.warning(f"Overwriting plugin: {category}/{name}")
+        
+        # Проверяем версию Python
+        if metadata:
+            min_py = metadata.min_python_version
+            if sys.version_info < min_py:
+                raise RuntimeError(
+                    f"Plugin {category}/{name} requires Python {'.'.join(map(str, min_py))}"
+                )
+        
+        # Проверяем, что плагин имеет правильный конструктор
+        self._validate_plugin_class(plugin_class)
+        
+        if metadata is None:
+            metadata = PluginMetadata(name=name, version="1.0.0")
         
         self._categories[category][name] = PluginInfo(
             name=name,
             plugin_class=plugin_class,
-            description=description,
-            version=version,
-            tags=tags or [],
-            dependencies=dependencies or []
+            metadata=metadata
         )
         
-        logger.debug(f"Registered plugin: {category}/{name}")
+        logger.debug(f"Registered plugin: {category}/{name} v{metadata.version}")
+    
+    def _validate_plugin_class(self, plugin_class: Type) -> None:
+        """
+        Проверяет, что конструктор плагина совместим с системой.
+        """
+        sig = inspect.signature(plugin_class.__init__)
+        params = list(sig.parameters.values())
+        
+        # Пропускаем self
+        params = params[1:]
+        
+        if len(params) > 1:
+            raise TypeError(
+                f"Plugin {plugin_class.__name__} has too many parameters. "
+                f"Only `config: Optional[Dict] = None` is allowed."
+            )
+        
+        if params:
+            param = params[0]
+            # Проверяем, что это config или **kwargs
+            is_config = param.name == 'config'
+            is_kwargs = param.kind == inspect.Parameter.VAR_KEYWORD
+            
+            if not is_config and not is_kwargs:
+                raise TypeError(
+                    f"Plugin {plugin_class.__name__} parameter must be "
+                    f"`config: Optional[Dict] = None` or `**kwargs`."
+                )
     
     def get(self, category: str, name: str) -> Optional[PluginInfo]:
-        """Возвращает информацию о плагине"""
         return self._categories.get(category, {}).get(name)
     
     def create(self, category: str, name: str, config: Optional[Dict] = None) -> Optional[Any]:
         """
         Унифицированное создание экземпляра плагина.
-        
-        Все плагины должны принимать `config: Optional[Dict] = None` в конструкторе.
         """
         info = self.get(category, name)
         if not info:
             logger.warning(f"Plugin not found: {category}/{name}")
             return None
         
+        # Проверяем депрекацию
+        if info.metadata.deprecated:
+            logger.warning(
+                f"Plugin {category}/{name} is deprecated since {info.metadata.deprecated_since}. "
+                f"Use {info.metadata.replaced_by} instead."
+            )
+        
         try:
-            # Проверяем сигнатуру конструктора
             sig = inspect.signature(info.plugin_class.__init__)
-            params = list(sig.parameters.keys())
+            params = list(sig.parameters.values())
             
-            # Если конструктор принимает config
-            if 'config' in params:
-                instance = info.plugin_class(config=config or {})
-            # Если конструктор принимает kwargs (старый стиль)
-            elif 'kwargs' in params:
-                instance = info.plugin_class(**(config or {}))
-            # Если конструктор не принимает аргументов
-            else:
+            # Пропускаем self
+            params = params[1:]
+            
+            if not params:
                 instance = info.plugin_class()
+            else:
+                param = params[0]
+                if param.name == 'config':
+                    instance = info.plugin_class(config=config or {})
+                elif param.kind == inspect.Parameter.VAR_KEYWORD:
+                    # Для плагинов вида __init__(self, **kwargs)
+                    instance = info.plugin_class(**(config or {}))
+                else:
+                    # Fallback: просто передаём config как аргумент
+                    instance = info.plugin_class(config or {})
             
             # Вызываем initialize(), если плагин реализует Plugin
             if isinstance(instance, Plugin):
@@ -162,30 +275,66 @@ class PluginRegistry:
             return None
     
     def list_plugins(self, category: Optional[str] = None) -> Dict[str, List[str]]:
-        """Возвращает список зарегистрированных плагинов"""
         if category:
-            return {category: list(self._categories.get(category, {}).keys())}
+            if category not in self._categories:
+                return {}
+            return {category: list(self._categories[category].keys())}
         return {cat: list(plugins.keys()) for cat, plugins in self._categories.items()}
     
-    def get_plugin_info(self, category: str, name: str) -> Optional[PluginInfo]:
-        return self.get(category, name)
+    def get_plugin_info(self, category: str, name: str) -> Optional[PluginMetadata]:
+        info = self.get(category, name)
+        return info.metadata if info else None
+    
+    def is_deprecated(self, category: str, name: str) -> bool:
+        info = self.get(category, name)
+        return info.metadata.deprecated if info else False
     
     # --- Удобные методы для обратной совместимости ---
     
     def register_detector(self, name: str, detector_class: Type, **kwargs):
-        self.register("detectors", name, detector_class, **kwargs)
+        metadata = PluginMetadata(
+            name=name,
+            version=kwargs.get("version", "1.0.0"),
+            description=kwargs.get("description", ""),
+            tags=kwargs.get("tags", [])
+        )
+        self.register("detectors", name, detector_class, metadata)
     
     def register_correlator(self, name: str, correlator_class: Type, **kwargs):
-        self.register("correlators", name, correlator_class, **kwargs)
+        metadata = PluginMetadata(
+            name=name,
+            version=kwargs.get("version", "1.0.0"),
+            description=kwargs.get("description", ""),
+            tags=kwargs.get("tags", [])
+        )
+        self.register("correlators", name, correlator_class, metadata)
     
     def register_policy(self, name: str, policy_class: Type, **kwargs):
-        self.register("policies", name, policy_class, **kwargs)
+        metadata = PluginMetadata(
+            name=name,
+            version=kwargs.get("version", "1.0.0"),
+            description=kwargs.get("description", ""),
+            tags=kwargs.get("tags", [])
+        )
+        self.register("policies", name, policy_class, metadata)
     
     def register_memory(self, name: str, memory_class: Type, **kwargs):
-        self.register("memory", name, memory_class, **kwargs)
+        metadata = PluginMetadata(
+            name=name,
+            version=kwargs.get("version", "1.0.0"),
+            description=kwargs.get("description", ""),
+            tags=kwargs.get("tags", [])
+        )
+        self.register("memory", name, memory_class, metadata)
     
     def register_history_backend(self, name: str, backend_class: Type, **kwargs):
-        self.register("history_backends", name, backend_class, **kwargs)
+        metadata = PluginMetadata(
+            name=name,
+            version=kwargs.get("version", "1.0.0"),
+            description=kwargs.get("description", ""),
+            tags=kwargs.get("tags", [])
+        )
+        self.register("history_backends", name, backend_class, metadata)
     
     def create_detector(self, name: str, config: Optional[Dict] = None):
         return self.create("detectors", name, config)
