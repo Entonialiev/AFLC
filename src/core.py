@@ -1,7 +1,7 @@
 """
 AFLC - Adaptive Feedback Loop Core
 Industrial-grade framework for AI agent self-correction
-Version: 0.3.0 (with Correlator, Risk Engine and Explainer support)
+Version: 0.4.0 (with Correlator, Risk Engine, Explainer and Memory support)
 """
 
 from dataclasses import dataclass, field
@@ -95,6 +95,12 @@ class Explainer:
         raise NotImplementedError
 
 
+class Memory:
+    def store(self, context: ActionContext, detection: Optional[Detection],
+              decision: Decision, risk: RiskScore) -> None:
+        raise NotImplementedError
+
+
 # --- ГЛАВНЫЙ ОРКЕСТРАТОР ---
 
 class AdaptiveFeedbackLoopCore:
@@ -108,6 +114,7 @@ class AdaptiveFeedbackLoopCore:
         flc.register_risk_engine(RiskEngine())
         flc.register_policy(DefaultPolicy())
         flc.register_explainer(Explainer())
+        flc.register_memory(Memory())
         
         decision = flc.execute(my_action, endpoint="/api/users", method="GET")
     """
@@ -122,6 +129,7 @@ class AdaptiveFeedbackLoopCore:
         self.risk_engine: Optional['RiskEngine'] = None
         self.policy: Optional[Policy] = None
         self.explainer: Optional[Explainer] = None
+        self.memory: Optional[Memory] = None
         
         self.action_counter = 0
         self.history: List[Dict] = []
@@ -149,6 +157,10 @@ class AdaptiveFeedbackLoopCore:
     
     def register_explainer(self, explainer: Explainer) -> 'AdaptiveFeedbackLoopCore':
         self.explainer = explainer
+        return self
+    
+    def register_memory(self, memory: Memory) -> 'AdaptiveFeedbackLoopCore':
+        self.memory = memory
         return self
     
     def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
@@ -242,12 +254,16 @@ class AdaptiveFeedbackLoopCore:
                     explanation="All systems nominal"
                 )
         
-        # --- 7. Explainer ---
+        # --- 7. Memory ---
+        if self.memory:
+            self.memory.store(context, final_detection, decision, risk)
+        
+        # --- 8. Explainer ---
         if self.explainer:
             explanation = self.explainer.explain(context, final_detection, decision, risk)
             decision.explanation = explanation
         
-        # --- 8. История ---
+        # --- 9. История ---
         self.history.append({
             "action_id": action_id,
             "timestamp": time.time(),
@@ -277,6 +293,7 @@ class AdaptiveFeedbackLoopCore:
             "has_risk_engine": self.risk_engine is not None,
             "has_policy": self.policy is not None,
             "has_explainer": self.explainer is not None,
+            "has_memory": self.memory is not None,
             "last_decision": self.last_decision.action if self.last_decision else None
         }
 
@@ -315,7 +332,7 @@ class SimpleCorrelator(Correlator):
 # --- ПРИМЕР ---
 
 if __name__ == "__main__":
-    print("🔁 AFLC v0.3.0 — Full Pipeline")
+    print("🔁 AFLC v0.4.0 — Full Pipeline")
     print("=" * 50)
     
     flc = AdaptiveFeedbackLoopCore(agent_id="demo-agent")
