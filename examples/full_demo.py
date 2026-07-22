@@ -1,204 +1,81 @@
-#!/usr/bin/env python
-"""
-AFLC Full Demo — показывает полный жизненный цикл
-"""
+C:\Users\Comp>C:\Users\Comp\Downloads\AFLC-main\AFLC-main\examples\full_demo.py
+============================================================
+🔁 AFLC Full Demo
+============================================================
 
-import sys
-import os
-import time
-import json
-from datetime import datetime
+📦 1. Инициализация AFLC...
+✅ AFLC создан
 
-# Добавляем путь к проекту
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+📡 2. Подписка на события...
+✅ Подписки созданы
 
-from aflc.bootstrap import create_aflc
-from aflc.domain.enums import ExecutionStatus, DecisionAction, EventType
+🚀 3. Отправка действия...
+   📨 Событие: ExecutionCreated (id=c1e7b74d-7323-46c2-8de5-9f1ce782355d)
+   Execution ID: c1e7b74d-7323-46c2-8de5-9f1ce782355d
+   Status: created
 
+🔄 4. Перевод в состояние PENDING...
+   Status: pending
 
-def main():
-    print("=" * 60)
-    print("🔁 AFLC Full Demo")
-    print("=" * 60)
+🔄 5. Перевод в состояние RUNNING...
+   📨 Событие: ExecutionCreated (id=d7bade45-4217-4d7a-9896-9cece43a4fe0)
+   📨 Событие: ExecutionStarted (id=c1e7b74d-7323-46c2-8de5-9f1ce782355d)
+   Status: pending
 
-    # --- 1. Создаём AFLC ---
-    print("\n📦 1. Инициализация AFLC...")
-    aflc = create_aflc("demo.db", use_sqlite=True)
-    engine = aflc.get_engine()
-    event_bus = aflc.get_event_bus()
+📊 6. Добавление наблюдений...
+   📨 Событие: ExecutionCreated (id=4c4c47d5-5851-4940-9d6c-f599fb3ca839)
+   📨 Событие: ObservationRecorded (metric=latency_ms, value=150.0)
+   ✅ Добавлено наблюдение: latency_ms=150ms
+   📨 Событие: ExecutionCreated (id=82f871e0-9fe2-4bef-a120-7608f13a15a3)
+   📨 Событие: ObservationRecorded (metric=response_size, value=2048)
+   ✅ Добавлено наблюдение: response_size=2048b
 
-    print("✅ AFLC создан")
+🔍 7. Добавление находок...
+   📨 Событие: ExecutionCreated (id=3ad9b2c9-9abf-4c97-b884-ed01a7715553)
+   📨 Событие: FindingCreated (source=rule, score=0.7)
+   ✅ Находка: High latency detected (score=0.7)
+   📨 Событие: ExecutionCreated (id=3a5439a5-5819-47bc-af9b-1d2f1e8e1e0c)
+   📨 Событие: FindingCreated (source=statistical, score=0.8)
+   ✅ Находка: Response size anomaly (score=0.8)
 
-    # --- 2. Подписываемся на события ---
-    print("\n📡 2. Подписка на события...")
+⚙️ 8. Завершение обработки...
+   📨 Событие: ExecutionCreated (id=9a48c44f-d572-4d04-a211-8addedbd75bf)
+   Status: pending
 
-    def on_execution_created(event):
-        print(f"   📨 Событие: ExecutionCreated (id={event.execution_id})")
+📈 9. Оценка риска...
+   📨 Событие: ExecutionCreated (id=d448137b-931b-4103-9ae4-e1ff080cd1e2)
+   📨 Событие: RiskEvaluated (score=0.85, components={'rule': 0.7, 'statistical': 0.8, 'endpoint': 0.9})
+   ✅ Оценка риска: 0.85
 
-    def on_execution_started(event):
-        print(f"   📨 Событие: ExecutionStarted (id={event.execution_id})")
+⚖️ 10. Принятие решения...
+   📨 Событие: ExecutionCreated (id=8450dfd4-5850-44af-8bc7-8358d5e76a6b)
+   📨 Событие: DecisionMade (action=block)
+   ✅ Решение: BLOCK
 
-    def on_observation_recorded(event):
-        print(f"   📨 Событие: ObservationRecorded (metric={event.observation.metric}, value={event.observation.value})")
+📝 11. Генерация объяснения...
+   📨 Событие: ExecutionCreated (id=a7e48a19-ab38-4830-b707-7185f2091b20)
+   📨 Событие: ExplanationGenerated (text=Action blocked due to high risk score (0.85). Dete...)
+   ✅ Объяснение добавлено
 
-    def on_finding_created(event):
-        print(f"   📨 Событие: FindingCreated (source={event.finding.source}, score={event.finding.score})")
+📦 12. Архивация...
+   📨 Событие: ExecutionCreated (id=24a82978-b7a2-4a0e-81e0-5131272cf8b5)
+   📨 Событие: ExecutionArchived (id=c1e7b74d-7323-46c2-8de5-9f1ce782355d)
+   ✅ Статус: pending
 
-    def on_risk_evaluated(event):
-        print(f"   📨 Событие: RiskEvaluated (score={event.risk_score.value}, components={event.risk_score.components})")
+📋 13. Получение Execution из репозитория...
+   Execution ID: c1e7b74d-7323-46c2-8de5-9f1ce782355d
+   Status: archived
+   Risk: 0.85
+   Decision: block
 
-    def on_decision_made(event):
-        print(f"   📨 Событие: DecisionMade (action={event.action.value})")
+📊 14. Статистика...
+   Всего Execution: 3
+   - created: 2
+   - archived: 1
 
-    def on_explanation_generated(event):
-        print(f"   📨 Событие: ExplanationGenerated (text={event.explanation.text[:50]}...)")
+============================================================
+✅ Демонстрация завершена!
+   Все компоненты работают корректно
+============================================================
 
-    def on_execution_archived(event):
-        print(f"   📨 Событие: ExecutionArchived (id={event.execution_id})")
-
-    event_bus.subscribe(EventType.EXECUTION_CREATED, handler=on_execution_created)
-    event_bus.subscribe(EventType.EXECUTION_STARTED, handler=on_execution_started)
-    event_bus.subscribe(EventType.OBSERVATION_RECORDED, handler=on_observation_recorded)
-    event_bus.subscribe(EventType.FINDING_CREATED, handler=on_finding_created)
-    event_bus.subscribe(EventType.RISK_EVALUATED, handler=on_risk_evaluated)
-    event_bus.subscribe(EventType.DECISION_MADE, handler=on_decision_made)
-    event_bus.subscribe(EventType.EXPLANATION_GENERATED, handler=on_explanation_generated)
-    event_bus.subscribe(EventType.EXECUTION_ARCHIVED, handler=on_execution_archived)
-
-    print("✅ Подписки созданы")
-
-    # --- 3. Отправляем действие ---
-    print("\n🚀 3. Отправка действия...")
-    execution = engine.submit_action(
-        agent_id="demo-agent",
-        endpoint="/api/users/delete",
-        method="DELETE",
-        payload={"user_id": 123, "reason": "test"}
-    )
-
-    print(f"   Execution ID: {execution.execution_id}")
-    print(f"   Status: {execution.status.value}")
-
-    # --- 4. Переводим в состояние PENDING и RUNNING через engine ---
-    print("\n🔄 4. Перевод в состояние RUNNING...")
-    engine.start_processing(execution.execution_id)
-    print(f"   Status: {execution.status.value}")
-
-    # --- 5. Добавляем наблюдения ---
-    print("\n📊 5. Добавление наблюдений...")
-    engine.add_observation(
-        execution_id=execution.execution_id,
-        metric="latency_ms",
-        value=150.0
-    )
-    print("   ✅ Добавлено наблюдение: latency_ms=150ms")
-
-    engine.add_observation(
-        execution_id=execution.execution_id,
-        metric="response_size",
-        value=2048
-    )
-    print("   ✅ Добавлено наблюдение: response_size=2048b")
-
-    # --- 6. Добавляем находки ---
-    print("\n🔍 6. Добавление находок...")
-    engine.add_finding(
-        execution_id=execution.execution_id,
-        source="rule",
-        score=0.7,
-        confidence=0.9,
-        reason="High latency detected",
-        tags=["performance", "latency"]
-    )
-    print("   ✅ Находка: High latency detected (score=0.7)")
-
-    engine.add_finding(
-        execution_id=execution.execution_id,
-        source="statistical",
-        score=0.8,
-        confidence=0.85,
-        reason="Response size anomaly",
-        tags=["security", "size"]
-    )
-    print("   ✅ Находка: Response size anomaly (score=0.8)")
-
-    # --- 7. Завершаем обработку ---
-    print("\n⚙️ 7. Завершение обработки...")
-    engine.complete_processing(execution.execution_id)
-    print(f"   Status: {execution.status.value}")
-
-    # --- 8. Оценка риска ---
-    print("\n📈 8. Оценка риска...")
-    engine.complete_assessment(
-        execution_id=execution.execution_id,
-        risk_value=0.85,
-        confidence=0.9,
-        components={
-            "rule": 0.7,
-            "statistical": 0.8,
-            "endpoint": 0.9
-        }
-    )
-    print("   ✅ Оценка риска: 0.85")
-
-    # --- 9. Принятие решения ---
-    print("\n⚖️ 9. Принятие решения...")
-    engine.make_decision(
-        execution_id=execution.execution_id,
-        action="block",
-        reason="High risk (0.85) exceeds threshold (0.3)",
-        severity=0.85
-    )
-    print("   ✅ Решение: BLOCK")
-
-    # --- 10. Объяснение ---
-    print("\n📝 10. Генерация объяснения...")
-    engine.add_explanation(
-        execution_id=execution.execution_id,
-        text="Action blocked due to high risk score (0.85). "
-             "Detected anomalies: high latency (150ms) and abnormal response size (2048b). "
-             "Endpoint /api/users/delete is critical.",
-        details={
-            "risk": 0.85,
-            "threshold": 0.3,
-            "anomalies": ["latency", "size"],
-            "endpoint_criticality": 0.9
-        }
-    )
-    print("   ✅ Объяснение добавлено")
-
-    # --- 11. Архивация ---
-    print("\n📦 11. Архивация...")
-    engine.archive_execution(execution.execution_id)
-    print(f"   ✅ Статус: {execution.status.value}")
-
-    # --- 12. Получение Execution из репозитория ---
-    print("\n📋 12. Получение Execution из репозитория...")
-    saved = engine.get_execution(execution.execution_id)
-    print(f"   Execution ID: {saved.execution_id}")
-    print(f"   Status: {saved.status.value}")
-    print(f"   Risk: {saved.risk_score.value if saved.risk_score else 'None'}")
-    print(f"   Decision: {saved.decision['action'].value if saved.decision else 'None'}")
-
-    # --- 13. Статистика ---
-    print("\n📊 13. Статистика...")
-    all_executions = engine.get_all_executions()
-    print(f"   Всего Execution: {len(all_executions)}")
-
-    by_status = {}
-    for e in all_executions:
-        status = e.status.value
-        by_status[status] = by_status.get(status, 0) + 1
-
-    for status, count in by_status.items():
-        print(f"   - {status}: {count}")
-
-    # --- Итог ---
-    print("\n" + "=" * 60)
-    print("✅ Демонстрация завершена!")
-    print("   Все компоненты работают корректно")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    main()
+C:\Users\Comp>
