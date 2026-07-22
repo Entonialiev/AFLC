@@ -53,7 +53,7 @@ class ExecutionStateMachine:
         return target
 
 
-@dataclass(slots=True)
+@dataclass
 class Execution:
     """
     Aggregate Root for Action Execution.
