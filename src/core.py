@@ -1,14 +1,12 @@
 """
 AFLC - Adaptive Feedback Loop Core
 Industrial-grade framework for AI agent self-correction
-Version: 0.2.0 (with Correlator support)
+Version: 0.2.0 (with Correlator and Risk Engine support)
 """
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Callable
-from datetime import datetime
 import time
-import json
 
 
 # --- БАЗОВЫЕ СУЩНОСТИ ---
@@ -40,9 +38,9 @@ class ActionContext:
 @dataclass
 class Detection:
     """Результат работы одного детектора"""
-    source: str  # "rule", "statistical", "isolation_forest", "llm"
-    score: float  # 0.0 - 1.0
-    confidence: float  # 0.0 - 1.0
+    source: str
+    score: float
+    confidence: float
     reason: str
     tags: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -51,11 +49,11 @@ class Detection:
 @dataclass
 class Decision:
     """Решение, принятое Policy Engine"""
-    action: str  # "continue", "pause", "block", "retry", "rollback"
+    action: str
     reason: str
-    severity: float  # 0.0 - 1.0
-    confidence: float  # 0.0 - 1.0
-    risk_score: float  # 0.0 - 1.0
+    severity: float
+    confidence: float
+    risk_score: float
     explanation: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -63,43 +61,31 @@ class Decision:
 @dataclass
 class RiskScore:
     """Оценка риска"""
-    value: float  # 0.0 - 1.0
-    confidence: float  # 0.0 - 1.0
+    value: float
+    confidence: float
     components: Dict[str, float] = field(default_factory=dict)
 
 
-# --- ИНТЕРФЕЙСЫ (ПРОТОКОЛЫ) ---
+# --- ИНТЕРФЕЙСЫ ---
 
 class Detector:
-    """Базовый интерфейс для всех детекторов"""
-    
     def detect(self, context: ActionContext) -> Optional[Detection]:
-        """Анализирует контекст и возвращает Detection или None"""
         raise NotImplementedError
 
 
 class Correlator:
-    """Объединяет результаты нескольких детекторов"""
-    
     def correlate(self, detections: List[Detection]) -> Optional[Detection]:
-        """Строит единый Detection из списка"""
         raise NotImplementedError
 
 
 class Predictor:
-    """Прогнозирует будущие аномалии"""
-    
     def predict(self, context: ActionContext, horizon: int = 10) -> Dict[str, float]:
-        """Возвращает вероятности аномалий на следующем шаге"""
         raise NotImplementedError
 
 
 class Policy:
-    """Движок принятия решений"""
-    
     def decide(self, context: ActionContext, detection: Optional[Detection], 
                risk: RiskScore) -> Decision:
-        """Принимает решение на основе контекста, детекции и риска"""
         raise NotImplementedError
 
 
@@ -113,66 +99,51 @@ class AdaptiveFeedbackLoopCore:
         flc = AdaptiveFeedbackLoopCore(agent_id="my-agent")
         flc.register_detector(RuleDetector())
         flc.register_correlator(Correlator())
+        flc.register_risk_engine(RiskEngine())
         flc.register_policy(DefaultPolicy())
         
         decision = flc.execute(my_action, endpoint="/api/users", method="GET")
-        if decision.action == "pause":
-            print("Anomaly detected! Stopping chain.")
     """
     
     def __init__(self, agent_id: str, config: Optional[Dict] = None):
         self.agent_id = agent_id
         self.config = config or {}
         
-        # Компоненты (будут заполняться через регистрацию)
         self.detectors: List[Detector] = []
         self.correlator: Optional[Correlator] = None
         self.predictor: Optional[Predictor] = None
+        self.risk_engine: Optional['RiskEngine'] = None
         self.policy: Optional[Policy] = None
         
-        # Состояние
         self.action_counter = 0
         self.history: List[Dict] = []
         self.last_decision: Optional[Decision] = None
     
     def register_detector(self, detector: Detector) -> 'AdaptiveFeedbackLoopCore':
-        """Добавляет детектор в конвейер"""
         self.detectors.append(detector)
         return self
     
     def register_correlator(self, correlator: Correlator) -> 'AdaptiveFeedbackLoopCore':
-        """Устанавливает коррелятор"""
         self.correlator = correlator
         return self
     
     def register_predictor(self, predictor: Predictor) -> 'AdaptiveFeedbackLoopCore':
-        """Устанавливает предиктор"""
         self.predictor = predictor
         return self
     
+    def register_risk_engine(self, risk_engine: 'RiskEngine') -> 'AdaptiveFeedbackLoopCore':
+        self.risk_engine = risk_engine
+        return self
+    
     def register_policy(self, policy: Policy) -> 'AdaptiveFeedbackLoopCore':
-        """Устанавливает движок политик"""
         self.policy = policy
         return self
     
     def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
-        """
-        Выполняет действие с полным контролем AFLC
-        
-        Args:
-            action_func: функция, которая выполняет действие
-            endpoint: str (обязательно) — эндпоинт
-            method: str (обязательно) — метод
-            payload: Optional[Dict] — полезная нагрузка
-            user_id: Optional[str] — идентификатор пользователя
-            
-        Returns:
-            Decision — решение, принятое системой
-        """
         self.action_counter += 1
         action_id = f"{self.agent_id}-{self.action_counter:04d}"
         
-        # --- 1. Выполняем действие и собираем контекст ---
+        # --- 1. Выполняем действие ---
         start_time = time.time()
         try:
             result = action_func(*args, **kwargs)
@@ -186,7 +157,6 @@ class AdaptiveFeedbackLoopCore:
         latency_ms = (time.time() - start_time) * 1000
         response_size = len(response_body) if response_body else 0
         
-        # Создаём контекст
         context = ActionContext(
             action_id=action_id,
             endpoint=kwargs.get("endpoint", "default"),
@@ -201,7 +171,7 @@ class AdaptiveFeedbackLoopCore:
             history=self.history
         )
         
-        # --- 2. Прогоняем через все детекторы ---
+        # --- 2. Детекторы ---
         detections = []
         for detector in self.detectors:
             try:
@@ -209,42 +179,38 @@ class AdaptiveFeedbackLoopCore:
                 if detection:
                     detections.append(detection)
             except Exception as e:
-                # Логируем ошибку детектора, но не останавливаем пайплайн
                 print(f"⚠️ Detector error: {e}")
                 continue
         
-        # --- 3. Коррелируем результаты ---
+        # --- 3. Коррелятор ---
         final_detection = None
         if self.correlator and detections:
             final_detection = self.correlator.correlate(detections)
         elif detections:
-            # Если коррелятора нет, берём детекцию с максимальным score
             final_detection = max(detections, key=lambda x: x.score)
         
-        # --- 4. Прогнозируем (пока заглушка) ---
+        # --- 4. Прогнозирование (заглушка) ---
         if self.predictor:
             predictions = self.predictor.predict(context)
         else:
             predictions = {}
         
-        # --- 5. Оцениваем риск ---
-        risk = RiskScore(value=0.0, confidence=0.0)
-        if final_detection:
-            risk = RiskScore(
-                value=final_detection.score,
-                confidence=final_detection.confidence,
-                components={"detection_score": final_detection.score}
-            )
-            # Пример: повышаем риск для критичных эндпоинтов
-            if context.endpoint.startswith("/admin") or context.endpoint.startswith("/api/admin"):
-                risk.value = min(1.0, risk.value * 1.5)
-                risk.components["endpoint_criticality"] = 0.8
+        # --- 5. Risk Engine ---
+        if self.risk_engine and final_detection:
+            risk = self.risk_engine.evaluate(context, final_detection)
+        else:
+            risk = RiskScore(value=0.0, confidence=0.0)
+            if final_detection:
+                risk = RiskScore(
+                    value=final_detection.score,
+                    confidence=final_detection.confidence,
+                    components={"detection_score": final_detection.score}
+                )
         
-        # --- 6. Принимаем решение ---
+        # --- 6. Policy ---
         if self.policy:
             decision = self.policy.decide(context, final_detection, risk)
         else:
-            # Дефолтная политика (если не зарегистрирована)
             if final_detection and final_detection.score > 0.3:
                 decision = Decision(
                     action="pause",
@@ -264,7 +230,7 @@ class AdaptiveFeedbackLoopCore:
                     explanation="All systems nominal"
                 )
         
-        # --- 7. Сохраняем в историю ---
+        # --- 7. История ---
         self.history.append({
             "action_id": action_id,
             "timestamp": time.time(),
@@ -281,28 +247,25 @@ class AdaptiveFeedbackLoopCore:
         return decision
     
     def reset(self):
-        """Сбрасывает состояние агента"""
         self.action_counter = 0
         self.history = []
         self.last_decision = None
     
     def get_stats(self) -> Dict[str, Any]:
-        """Возвращает статистику работы"""
         return {
             "agent_id": self.agent_id,
             "actions": self.action_counter,
             "detectors": [d.__class__.__name__ for d in self.detectors],
             "has_correlator": self.correlator is not None,
+            "has_risk_engine": self.risk_engine is not None,
             "has_policy": self.policy is not None,
             "last_decision": self.last_decision.action if self.last_decision else None
         }
 
 
-# --- ВСТРОЕННЫЕ РЕАЛИЗАЦИИ ИНТЕРФЕЙСОВ ---
+# --- ВСТРОЕННЫЕ РЕАЛИЗАЦИИ ---
 
 class DefaultPolicy(Policy):
-    """Простая политика по умолчанию"""
-    
     def decide(self, context: ActionContext, detection: Optional[Detection],
                risk: RiskScore) -> Decision:
         if detection and detection.score > 0.3:
@@ -325,57 +288,41 @@ class DefaultPolicy(Policy):
 
 
 class SimpleCorrelator(Correlator):
-    """Простой коррелятор: берёт максимальный score"""
-    
     def correlate(self, detections: List[Detection]) -> Optional[Detection]:
         if not detections:
             return None
         return max(detections, key=lambda x: x.score)
 
 
-# --- ПРИМЕР ИСПОЛЬЗОВАНИЯ ---
+# --- ПРИМЕР ---
 
 if __name__ == "__main__":
     print("🔁 AFLC v0.2.0 — Full Pipeline")
     print("=" * 50)
     
-    # Создаём экземпляр
     flc = AdaptiveFeedbackLoopCore(agent_id="demo-agent")
-    
-    # Регистрируем компоненты
     flc.register_policy(DefaultPolicy())
     flc.register_correlator(SimpleCorrelator())
     
-    # Определяем действие
     def my_action(delay_ms=100):
         import time
         time.sleep(delay_ms / 1000.0)
         return {"status": "ok"}
     
-    # Выполняем несколько действий
-    print("\n📊 Выполнение действий:")
     for i in range(5):
         decision = flc.execute(
-            my_action,
-            delay_ms=50 + i * 10,
+            my_action, 50 + i * 10,
             endpoint="/api/test",
             method="GET"
         )
         print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
     
-    # Аномальное действие
     print("\n🔴 Аномальное действие:")
     decision = flc.execute(
-        my_action,
-        delay_ms=3000,
+        my_action, 3000,
         endpoint="/api/test",
         method="GET"
     )
-    print(f"  Результат: {decision.action}")
-    print(f"  Причина: {decision.reason}")
-    print(f"  Severity: {decision.severity:.2f}")
+    print(f"  → {decision.action}: {decision.reason}")
     
-    print("\n📊 Статистика:")
-    stats = flc.get_stats()
-    for key, value in stats.items():
-        print(f"  {key}: {value}")
+    print(f"\n📊 Статистика: {flc.get_stats()}")
