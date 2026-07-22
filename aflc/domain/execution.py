@@ -123,7 +123,9 @@ class Execution:
         self.risk_score = risk_score
         self._transition_to(ExecutionStatus.RISK_EVALUATED)
         self._add_event(AssessmentCompleted(
-            self.execution_id, self.findings.copy(), risk_score
+            execution_id=self.execution_id,
+            findings=self.findings.copy(),
+            risk_score=risk_score
         ))
 
     def make_decision(self, action: DecisionAction, reason: str, severity: float) -> None:
@@ -132,7 +134,12 @@ class Execution:
             raise InvalidStateError(f"Cannot make decision in state {self.status.value}")
         self.decision = {"action": action, "reason": reason, "severity": severity}
         self._transition_to(ExecutionStatus.DECISION_MADE)
-        self._add_event(DecisionMade(self.execution_id, action, reason, severity))
+        self._add_event(DecisionMade(
+            execution_id=self.execution_id,
+            action=action,
+            reason=reason,
+            severity=severity
+        ))
 
     def add_explanation(self, explanation: Explanation) -> None:
         """Add explanation to execution."""
@@ -140,12 +147,15 @@ class Execution:
             raise InvalidStateError(f"Cannot add explanation in state {self.status.value}")
         self.explanation = explanation
         self._transition_to(ExecutionStatus.EXPLAINED)
-        self._add_event(ExplanationGenerated(self.execution_id, explanation))
+        self._add_event(ExplanationGenerated(
+            execution_id=self.execution_id,
+            explanation=explanation
+        ))
 
     def archive(self) -> None:
         """Archive execution."""
         self._transition_to(ExecutionStatus.ARCHIVED)
-        self._add_event(ExecutionArchived(self.execution_id))
+        self._add_event(ExecutionArchived(execution_id=self.execution_id))
 
     # --- Observation Methods ---
 
@@ -155,7 +165,10 @@ class Execution:
             raise InvalidStateError(f"Cannot add observation in state {self.status.value}")
         self.observations.append(observation)
         self.updated_at = datetime.utcnow()
-        self._add_event(ObservationAdded(self.execution_id, observation))
+        self._add_event(ObservationAdded(
+            execution_id=self.execution_id,
+            observation=observation
+        ))
 
     def add_finding(self, finding: Finding) -> None:
         """Add finding from a detector."""
@@ -163,7 +176,10 @@ class Execution:
             raise InvalidStateError(f"Cannot add finding in state {self.status.value}")
         self.findings.append(finding)
         self.updated_at = datetime.utcnow()
-        self._add_event(FindingProduced(self.execution_id, finding))
+        self._add_event(FindingProduced(
+            execution_id=self.execution_id,
+            finding=finding
+        ))
 
     # --- Private Methods ---
 
