@@ -1,5 +1,5 @@
 """
-AFLC Demo — Full Pipeline with Risk Engine and Explainer
+AFLC Demo — Full Pipeline with Memory
 """
 
 import sys
@@ -12,11 +12,15 @@ from detectors import RuleDetector, StatisticalDetector
 from correlator import Correlator
 from risk import RiskEngine
 from explainer import Explainer
+from memory import Memory
 
 
 def main():
-    print("🔁 AFLC Demo — Full Pipeline with Explainer")
+    print("🔁 AFLC Demo — Full Pipeline with Memory")
     print("-" * 60)
+    
+    # Создаём Memory
+    memory = Memory(storage_file="flc_memory.json", max_size=1000)
     
     flc = (
         AdaptiveFeedbackLoopCore(agent_id="demo-agent")
@@ -26,6 +30,7 @@ def main():
         .register_risk_engine(RiskEngine())
         .register_policy(DefaultPolicy())
         .register_explainer(Explainer())
+        .register_memory(memory)
     )
     
     def my_action(delay=0.05, size=1024):
@@ -51,8 +56,14 @@ def main():
         user_id="admin"
     )
     
-    print(decision.explanation)
-    print(f"\n📊 Кратко: {flc.explainer.short_explain(decision)}")
+    print(flc.explainer.explain(None, None, decision, None))
+    
+    # Статистика памяти
+    print("\n📊 Статистика памяти:")
+    stats = flc.memory.get_stats()
+    print(f"  Всего записей: {stats['total_records']}")
+    print(f"  Аномалий: {stats['anomalies']}")
+    print(f"  Частота аномалий: {stats['anomaly_rate']:.2%}")
 
 
 if __name__ == "__main__":
