@@ -61,7 +61,7 @@ class TestExecutionEngine:
         assert len(self.event_bus.events) == 1
         assert self.repository.find_by_id(execution.execution_id) is not None
 
-    def test_record_observation(self):  # переименовано
+    def test_record_observation(self):
         execution = self.engine.submit_action(
             agent_id="agent-1",
             endpoint="/api/test",
@@ -72,7 +72,7 @@ class TestExecutionEngine:
         execution.start()
         self.repository.save(execution)
 
-        execution = self.engine.record_observation(  # изменено
+        execution = self.engine.record_observation(
             execution_id=execution.execution_id,
             metric="latency_ms",
             value=150.0
@@ -82,7 +82,7 @@ class TestExecutionEngine:
         assert execution.observations[0].metric == "latency_ms"
         assert execution.observations[0].value == 150.0
 
-    def test_record_finding(self):  # переименовано
+    def test_record_finding(self):
         execution = self.engine.submit_action(
             agent_id="agent-1",
             endpoint="/api/test",
@@ -93,7 +93,7 @@ class TestExecutionEngine:
         execution.start()
         self.repository.save(execution)
 
-        execution = self.engine.record_finding(  # изменено
+        execution = self.engine.record_finding(
             execution_id=execution.execution_id,
             source="rule",
             score=0.8,
@@ -117,13 +117,13 @@ class TestExecutionEngine:
         execution.start()
         self.repository.save(execution)
 
-        execution = self.engine.record_observation(  # изменено
+        execution = self.engine.record_observation(
             execution_id=execution.execution_id,
             metric="latency_ms",
             value=200.0
         )
 
-        execution = self.engine.record_finding(  # изменено
+        execution = self.engine.record_finding(
             execution_id=execution.execution_id,
             source="rule",
             score=0.7,
@@ -135,7 +135,7 @@ class TestExecutionEngine:
         execution.complete_processing()
         self.repository.save(execution)
 
-        execution = self.engine.evaluate_risk(  # изменено
+        execution = self.engine.evaluate_risk(
             execution_id=execution.execution_id,
             risk_value=0.8,
             confidence=0.9,
@@ -172,7 +172,7 @@ class TestExecutionEngine:
         execution.complete_processing()
         self.repository.save(execution)
 
-        execution = self.engine.evaluate_risk(  # изменено
+        execution = self.engine.evaluate_risk(
             execution_id=execution.execution_id,
             risk_value=0.5,
             confidence=0.9,
