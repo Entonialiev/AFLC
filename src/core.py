@@ -1,80 +1,23 @@
 """
 AFLC - Adaptive Feedback Loop Core
-Version: 0.7.1 (fixed circular import)
+Version: 0.7.2 (fixed circular import)
 """
 
-from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Callable, Union
 import time
 import asyncio
 import logging
 
-from .events import EventBus, Event
-from .registry import registry
-from .exceptions import AFLCError, PipelineError, ConfigurationError
+from .models import ActionContext, Detection, Decision, RiskScore
 from .interfaces import (
     Detector, AsyncDetector, Correlator, Predictor,
     Policy, AsyncPolicy, Explainer, Memory
 )
+from .events import EventBus, Event
+from .registry import registry
+from .exceptions import AFLCError, PipelineError, ConfigurationError
 
 logger = logging.getLogger("aflc")
-
-
-# --- БАЗОВЫЕ СУЩНОСТИ ---
-
-@dataclass
-class ActionContext:
-    """Полный контекст выполнения действия"""
-    action_id: str
-    endpoint: str
-    method: str
-    timestamp: float = field(default_factory=time.time)
-    payload: Optional[Dict] = None
-    headers: Optional[Dict] = None
-    response: Optional[Dict] = None
-    latency_ms: float = 0.0
-    error_code: int = 0
-    response_size: int = 0
-    cpu_usage: float = 0.0
-    memory_usage: float = 0.0
-    user_id: Optional[str] = None
-    session_id: Optional[str] = None
-    history: List[Dict] = field(default_factory=list)
-    tags: List[str] = field(default_factory=list)
-    
-    def to_dict(self) -> Dict:
-        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
-
-
-@dataclass
-class Detection:
-    """Результат работы одного детектора"""
-    source: str
-    score: float
-    confidence: float
-    reason: str
-    tags: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class Decision:
-    """Решение, принятое Policy Engine"""
-    action: str
-    reason: str
-    severity: float
-    confidence: float
-    risk_score: float
-    explanation: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class RiskScore:
-    """Оценка риска"""
-    value: float
-    confidence: float
-    components: Dict[str, float] = field(default_factory=dict)
 
 
 # --- ГЛАВНЫЙ ОРКЕСТРАТОР ---
@@ -264,7 +207,7 @@ class AdaptiveFeedbackLoopCore:
             response=result,
             user_id=kwargs.get("user_id", None),
             session_id=kwargs.get("session_id", None),
-            history=[]  # Не передаём историю из core, её хранит HistoryBackend
+            history=[]
         )
     
     def _finalize(self, result_context: ActionContext) -> Decision:
@@ -359,29 +302,3 @@ class SimpleCorrelator(Correlator):
         if not detections:
             return None
         return max(detections, key=lambda x: x.score)
-
-
-# --- ПРИМЕР ---
-
-if __name__ == "__main__":
-    print("🔁 AFLC v0.7.1 — No Duplication, History Backend")
-    print("=" * 50)
-    
-    flc = AdaptiveFeedbackLoopCore(agent_id="demo-agent")
-    flc.register_policy(DefaultPolicy())
-    flc.register_correlator(SimpleCorrelator())
-    
-    from .history import MemoryHistory
-    flc.register_history_backend(MemoryHistory(max_size=100))
-    
-    def my_action(delay_ms=100):
-        import time
-        time.sleep(delay_ms / 1000.0)
-        return {"status": "ok"}
-    
-    print("\n🔄 Выполнение действий:")
-    for i in range(3):
-        decision = flc.execute(my_action, 50 + i * 10, endpoint="/api/test", method="GET")
-        print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
-    
-    print(f"\n📊 Статистика: {flc.get_stats()}")
