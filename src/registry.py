@@ -1,6 +1,6 @@
 """
 Plugin Registry для AFLC
-Version: 2.1.1 (fixed validation and register_risk_engine)
+Version: 2.1.2 (fixed parameter validation)
 """
 
 from typing import Dict, Type, Optional, Any, List, Callable, Tuple
@@ -187,7 +187,7 @@ class PluginRegistry:
         """
         Проверяет, что конструктор плагина совместим с системой.
         Допускаются:
-        - __init__(self) — без параметров
+        - __init__(self) — без параметров (или с параметрами по умолчанию)
         - __init__(self, config: Optional[Dict] = None)
         - __init__(self, **kwargs)
         """
@@ -204,20 +204,27 @@ class PluginRegistry:
         # Если ровно один параметр
         if len(params) == 1:
             param = params[0]
-            # Проверяем, что это config или **kwargs
+            # Проверяем, что это config или **kwargs или имеет значение по умолчанию
             is_config = param.name == 'config'
             is_kwargs = param.kind == inspect.Parameter.VAR_KEYWORD
+            has_default = param.default != inspect.Parameter.empty
             
-            if not is_config and not is_kwargs:
-                raise TypeError(
-                    f"Plugin {plugin_class.__name__} parameter must be "
-                    f"`config: Optional[Dict] = None` or `**kwargs`, got `{param.name}`."
-                )
+            # Если это config или kwargs, или параметр с дефолтом — OK
+            if is_config or is_kwargs or has_default:
+                return
+            
+            raise TypeError(
+                f"Plugin {plugin_class.__name__} parameter must be "
+                f"`config: Optional[Dict] = None` or `**kwargs`, got `{param.name}`."
+            )
+        
+        # Если несколько параметров, проверяем, что у всех есть дефолты
+        all_have_defaults = all(p.default != inspect.Parameter.empty for p in params)
+        if all_have_defaults:
             return
         
-        # Если больше одного параметра
         raise TypeError(
-            f"Plugin {plugin_class.__name__} has too many parameters ({len(params)}). "
+            f"Plugin {plugin_class.__name__} has too many required parameters ({len(params)}). "
             f"Only `config: Optional[Dict] = None` or no parameters are allowed."
         )
     
@@ -250,6 +257,7 @@ class PluginRegistry:
                 elif param.kind == inspect.Parameter.VAR_KEYWORD:
                     instance = info.plugin_class(**(config or {}))
                 else:
+                    # Если параметр с дефолтом, передаём config как первый аргумент
                     instance = info.plugin_class(config or {})
             
             if isinstance(instance, Plugin):
