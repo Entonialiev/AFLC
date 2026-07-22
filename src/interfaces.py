@@ -4,7 +4,7 @@ Version: 1.0.0
 """
 
 from typing import Dict, List, Optional, Any
-from .core import ActionContext, Detection, Decision, RiskScore
+from .models import ActionContext, Detection, Decision, RiskScore
 
 
 class Detector:
