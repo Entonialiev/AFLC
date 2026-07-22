@@ -1,7 +1,7 @@
 """
 AFLC - Adaptive Feedback Loop Core
 Industrial-grade framework for AI agent self-correction
-Version: 0.4.0 (with Correlator, Risk Engine, Explainer and Memory support)
+Version: 0.4.0 (with YAML config support)
 """
 
 from dataclasses import dataclass, field
@@ -134,6 +134,56 @@ class AdaptiveFeedbackLoopCore:
         self.action_counter = 0
         self.history: List[Dict] = []
         self.last_decision: Optional[Decision] = None
+    
+    @classmethod
+    def from_config(cls, config_path: str) -> 'AdaptiveFeedbackLoopCore':
+        """
+        Создаёт экземпляр AFLC из YAML-конфигурации.
+        Требуется установить pyyaml: pip install pyyaml
+        """
+        import yaml
+        with open(config_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+        return cls.from_config_dict(data)
+    
+    @classmethod
+    def from_config_dict(cls, data: Dict[str, Any]) -> 'AdaptiveFeedbackLoopCore':
+        """Создаёт экземпляр AFLC из словаря конфигурации"""
+        from .detectors import RuleDetector, StatisticalDetector
+        from .correlator import Correlator
+        from .risk import RiskEngine
+        from .memory import Memory
+        
+        agent_id = data.get("agent_id", "default-agent")
+        flc = cls(agent_id=agent_id, config=data)
+        
+        # Регистрируем детекторы
+        for name, detector_config in data.get("detectors", {}).items():
+            if not detector_config.get("enabled", True):
+                continue
+            
+            params = detector_config.get("params", {})
+            
+            if name == "rule":
+                flc.register_detector(RuleDetector(params))
+            elif name == "statistical":
+                flc.register_detector(StatisticalDetector(params))
+            # Добавляйте другие детекторы по мере появления
+        
+        # Коррелятор
+        flc.register_correlator(Correlator(data.get("correlator", {})))
+        
+        # Risk Engine
+        flc.register_risk_engine(RiskEngine(data.get("risk", {})))
+        
+        # Policy
+        flc.register_policy(DefaultPolicy())
+        
+        # Memory
+        memory_config = data.get("memory", {})
+        flc.register_memory(Memory(**memory_config))
+        
+        return flc
     
     def register_detector(self, detector: Detector) -> 'AdaptiveFeedbackLoopCore':
         self.detectors.append(detector)
