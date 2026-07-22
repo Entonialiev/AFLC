@@ -44,10 +44,10 @@ class PluginRegistry:
     def _register_builtins(self):
         from .detectors import RuleDetector, StatisticalDetector
         from .correlator import Correlator as DefaultCorrelator
-        from .core import DefaultPolicy, SimpleCorrelator
         from .risk import RiskEngine
         from .explainer import Explainer as DefaultExplainer
         from .history import MemoryHistory
+        from .defaults import DefaultPolicy, SimpleCorrelator
         
         self.register_detector("rule", RuleDetector, "Rule-based detector")
         self.register_detector("statistical", StatisticalDetector, "EWMA-based adaptive detector")
