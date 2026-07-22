@@ -61,6 +61,20 @@ class TestExecutionEngine:
         assert len(self.event_bus.events) == 1
         assert self.repository.find_by_id(execution.execution_id) is not None
 
+    def test_start_processing(self):
+        """Тест перевода в состояние RUNNING"""
+        execution = self.engine.submit_action(
+            agent_id="agent-1",
+            endpoint="/api/test",
+            method="GET",
+            payload={}
+        )
+        execution.submit()
+        execution.start()
+        self.repository.save(execution)
+
+        assert execution.status == ExecutionStatus.RUNNING
+
     def test_record_observation(self):
         execution = self.engine.submit_action(
             agent_id="agent-1",
