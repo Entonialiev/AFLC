@@ -1,0 +1,36 @@
+# AFLC Configuration Example
+agent_id: "my-agent"
+window_size: 30
+severity_threshold: 0.3
+
+detectors:
+  rule:
+    enabled: true
+    params:
+      timeout_limit_ms: 2000
+      size_limit_bytes: 1000000
+  
+  statistical:
+    enabled: true
+    params:
+      z_score_threshold: 2.5
+      min_samples: 10
+      alpha: 0.3
+
+correlator:
+  strategy: "weighted"
+  threshold: 0.3
+
+risk:
+  endpoint_base_risk:
+    /admin: 0.9
+    /api/admin: 0.85
+    default: 0.3
+
+policy:
+  default_action: "continue"
+  pause_threshold: 0.3
+
+memory:
+  max_size: 10000
+  storage_file: "flc_memory.json"
