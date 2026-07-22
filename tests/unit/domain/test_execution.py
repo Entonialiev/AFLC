@@ -60,7 +60,8 @@ class TestExecution:
 
     def test_start_fails_if_not_submitted(self):
         execution = Execution(self.action, self.command)
-        with pytest.raises(InvalidStateError):
+        # start() without submit() should raise InvalidTransitionError
+        with pytest.raises(InvalidTransitionError):
             execution.start()
 
     def test_complete_processing(self):
