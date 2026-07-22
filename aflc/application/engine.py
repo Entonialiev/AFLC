@@ -43,6 +43,36 @@ class ExecutionEngine:
             idempotency_key=idempotency_key
         )
     
+    def start_processing(self, execution_id: str) -> Execution:
+        """Start processing an execution."""
+        execution = self.repository.find_by_id(execution_id)
+        if not execution:
+            raise ValueError(f"Execution {execution_id} not found")
+        
+        execution.start_processing()
+        self.repository.save(execution)
+        return execution
+    
+    def complete_processing(self, execution_id: str) -> Execution:
+        """Complete processing an execution."""
+        execution = self.repository.find_by_id(execution_id)
+        if not execution:
+            raise ValueError(f"Execution {execution_id} not found")
+        
+        execution.complete_processing()
+        self.repository.save(execution)
+        return execution
+    
+    def fail_processing(self, execution_id: str, reason: str) -> Execution:
+        """Fail processing an execution."""
+        execution = self.repository.find_by_id(execution_id)
+        if not execution:
+            raise ValueError(f"Execution {execution_id} not found")
+        
+        execution.fail_processing(reason)
+        self.repository.save(execution)
+        return execution
+    
     def add_observation(
         self,
         execution_id: str,
@@ -134,4 +164,4 @@ class ExecutionEngine:
     
     def get_all_executions(self) -> List[Execution]:
         """Get all executions."""
-        return self.repository.find_by_status("")  # TODO: добавить метод в репозиторий
+        return self.repository.find_all()
