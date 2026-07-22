@@ -10,6 +10,8 @@ import sqlite3
 import time
 from collections import deque
 
+from .interfaces import Memory
+
 
 class HistoryBackend(ABC):
     """Абстрактный базовый класс для бэкендов истории"""
@@ -38,12 +40,31 @@ class HistoryBackend(ABC):
 class MemoryHistory(HistoryBackend):
     """In-memory реализация с ограничением размера"""
     
-    def __init__(self, max_size: int = 10000):
+    def __init__(self, max_size: int = 10000, storage_file: Optional[str] = None):
         self.max_size = max_size
+        self.storage_file = storage_file
         self._records: deque = deque(maxlen=max_size)
+        self._load()
+    
+    def _load(self):
+        """Загружает данные из файла, если он указан"""
+        if self.storage_file:
+            try:
+                with open(self.storage_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self._records.extend(data)
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+    
+    def _save(self):
+        """Сохраняет данные в файл, если он указан"""
+        if self.storage_file:
+            with open(self.storage_file, 'w', encoding='utf-8') as f:
+                json.dump(list(self._records), f, ensure_ascii=False)
     
     def add(self, record: Dict[str, Any]) -> None:
         self._records.append(record)
+        self._save()
     
     def get_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
         return list(self._records)[-limit:]
@@ -52,11 +73,14 @@ class MemoryHistory(HistoryBackend):
         return {
             "total": len(self._records),
             "max_size": self.max_size,
-            "type": "memory"
+            "type": "memory",
+            "storage_file": self.storage_file
         }
     
     def clear(self) -> None:
         self._records.clear()
+        if self.storage_file:
+            self._save()
 
 
 class SQLiteHistory(HistoryBackend):
@@ -112,6 +136,9 @@ class SQLiteHistory(HistoryBackend):
                 record.get("risk_score", 0.0),
                 json.dumps(record.get("metadata", {}))
             ))
+            
+            # Ограничиваем количество записей
+            conn.execute("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY timestamp DESC LIMIT ?)", (self.max_records,))
     
     def get_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
