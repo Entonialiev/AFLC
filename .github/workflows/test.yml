@@ -30,7 +30,9 @@ jobs:
     
     - name: Run tests
       run: |
-        pytest tests/ --cov=src --cov-report=term
+        PYTHONPATH=. pytest tests/ --cov=aflc --cov-report=term
     
     - name: Upload coverage
       uses: codecov/codecov-action@v3
+      with:
+        fail_ci_if_error: false
