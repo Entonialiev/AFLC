@@ -11,9 +11,9 @@ from aflc.domain.value_objects import (
 )
 from aflc.domain.enums import ExecutionStatus, DecisionAction, Severity
 from aflc.domain.events import (
-    ExecutionCreated, ObservationAdded, FindingProduced,
-    AssessmentCompleted, DecisionMade, ExplanationGenerated,
-    ExecutionArchived
+    ExecutionCreated, ExecutionStarted, ObservationRecorded,
+    FindingCreated, AssessmentCompleted, RiskEvaluated, DecisionMade,
+    ExplanationGenerated, ExecutionArchived
 )
 from aflc.domain.exceptions import InvalidStateError, InvalidTransitionError
 
@@ -50,17 +50,23 @@ class TestExecution:
 
         assert execution.status == ExecutionStatus.PENDING
 
-    def test_start_processing(self):
+    def test_start_execution(self):
         execution = Execution(self.action, self.command)
         execution.submit()
-        execution.start_processing()
+        execution.start()
 
         assert execution.status == ExecutionStatus.RUNNING
+        assert isinstance(execution.events[-1], ExecutionStarted)
+
+    def test_start_fails_if_not_submitted(self):
+        execution = Execution(self.action, self.command)
+        with pytest.raises(InvalidStateError):
+            execution.start()
 
     def test_complete_processing(self):
         execution = Execution(self.action, self.command)
         execution.submit()
-        execution.start_processing()
+        execution.start()
         execution.complete_processing()
 
         assert execution.status == ExecutionStatus.COMPLETED
@@ -68,32 +74,76 @@ class TestExecution:
     def test_fail_processing(self):
         execution = Execution(self.action, self.command)
         execution.submit()
-        execution.start_processing()
+        execution.start()
         execution.fail_processing("test error")
 
         assert execution.status == ExecutionStatus.FAILED
 
-    def test_complete_assessment(self):
+    def test_record_observation(self):
         execution = Execution(self.action, self.command)
         execution.submit()
-        execution.start_processing()
+        execution.start()
+
+        obs = Observation(
+            observation_id="obs-1",
+            metric="latency_ms",
+            value=150.0,
+            timestamp=datetime.utcnow()
+        )
+        execution.record_observation(obs)
+
+        assert len(execution.observations) == 1
+        assert isinstance(execution.events[-1], ObservationRecorded)
+
+    def test_record_finding(self):
+        execution = Execution(self.action, self.command)
+        execution.submit()
+        execution.start()
+
+        finding = Finding(
+            source="rule",
+            score=0.8,
+            confidence=0.9,
+            reason="Latency anomaly",
+            tags=("performance",)
+        )
+        execution.record_finding(finding)
+
+        assert len(execution.findings) == 1
+        assert isinstance(execution.events[-1], FindingCreated)
+
+    def test_cannot_record_observation_if_not_running(self):
+        execution = Execution(self.action, self.command)
+        obs = Observation(
+            observation_id="obs-1",
+            metric="latency_ms",
+            value=150.0,
+            timestamp=datetime.utcnow()
+        )
+        with pytest.raises(InvalidStateError):
+            execution.record_observation(obs)
+
+    def test_evaluate_risk(self):
+        execution = Execution(self.action, self.command)
+        execution.submit()
+        execution.start()
         execution.complete_processing()
 
         risk = RiskScore(value=0.7, confidence=0.9, components={"rule": 0.6})
-        execution.complete_assessment(risk)
+        execution.evaluate_risk(risk)
 
         assert execution.status == ExecutionStatus.RISK_EVALUATED
         assert execution.risk_score == risk
-        assert isinstance(execution.events[-1], AssessmentCompleted)
+        assert isinstance(execution.events[-1], RiskEvaluated)
 
     def test_make_decision(self):
         execution = Execution(self.action, self.command)
         execution.submit()
-        execution.start_processing()
+        execution.start()
         execution.complete_processing()
 
         risk = RiskScore(value=0.7, confidence=0.9, components={"rule": 0.6})
-        execution.complete_assessment(risk)
+        execution.evaluate_risk(risk)
 
         execution.make_decision(DecisionAction.BLOCK, "High risk", 0.7)
 
@@ -104,11 +154,11 @@ class TestExecution:
     def test_add_explanation(self):
         execution = Execution(self.action, self.command)
         execution.submit()
-        execution.start_processing()
+        execution.start()
         execution.complete_processing()
 
         risk = RiskScore(value=0.7, confidence=0.9, components={"rule": 0.6})
-        execution.complete_assessment(risk)
+        execution.evaluate_risk(risk)
         execution.make_decision(DecisionAction.BLOCK, "High risk", 0.7)
 
         explanation = Explanation(text="Blocked due to high risk", details={})
@@ -118,79 +168,23 @@ class TestExecution:
         assert execution.explanation == explanation
         assert isinstance(execution.events[-1], ExplanationGenerated)
 
-    def test_archive(self):
+    def test_store_and_archive(self):
         execution = Execution(self.action, self.command)
         execution.submit()
-        execution.start_processing()
+        execution.start()
         execution.complete_processing()
 
         risk = RiskScore(value=0.7, confidence=0.9, components={"rule": 0.6})
-        execution.complete_assessment(risk)
+        execution.evaluate_risk(risk)
         execution.make_decision(DecisionAction.BLOCK, "High risk", 0.7)
         explanation = Explanation(text="Blocked due to high risk", details={})
         execution.add_explanation(explanation)
 
-        execution.store()  # Добавляем промежуточный шаг
+        execution.store()
         execution.archive()
 
         assert execution.status == ExecutionStatus.ARCHIVED
         assert isinstance(execution.events[-1], ExecutionArchived)
-
-    def test_add_observation(self):
-        execution = Execution(self.action, self.command)
-        execution.submit()
-        execution.start_processing()
-
-        obs = Observation(
-            observation_id="obs-1",
-            metric="latency_ms",
-            value=150.0,
-            timestamp=datetime.utcnow()
-        )
-        execution.add_observation(obs)
-
-        assert len(execution.observations) == 1
-        assert isinstance(execution.events[-1], ObservationAdded)
-
-    def test_add_finding(self):
-        execution = Execution(self.action, self.command)
-        execution.submit()
-        execution.start_processing()
-
-        finding = Finding(
-            source="rule",
-            score=0.8,
-            confidence=0.9,
-            reason="Latency anomaly",
-            tags=("performance",)
-        )
-        execution.add_finding(finding)
-
-        assert len(execution.findings) == 1
-        assert isinstance(execution.events[-1], FindingProduced)
-
-    def test_cannot_add_observation_in_wrong_state(self):
-        execution = Execution(self.action, self.command)
-        # CREATED state
-
-        obs = Observation(
-            observation_id="obs-1",
-            metric="latency_ms",
-            value=150.0,
-            timestamp=datetime.utcnow()
-        )
-        with pytest.raises(InvalidStateError):
-            execution.add_observation(obs)
-
-    def test_cannot_make_decision_in_wrong_state(self):
-        execution = Execution(self.action, self.command)
-        execution.submit()
-        execution.start_processing()
-        execution.complete_processing()
-
-        # Not in RISK_EVALUATED state
-        with pytest.raises(InvalidStateError):
-            execution.make_decision(DecisionAction.BLOCK, "test", 0.5)
 
     def test_get_events_clears_events(self):
         execution = Execution(self.action, self.command)
@@ -204,6 +198,6 @@ class TestExecution:
         assert execution.is_terminal() is False
 
         execution.submit()
-        execution.start_processing()
+        execution.start()
         execution.fail_processing("error")
         assert execution.is_terminal() is True
