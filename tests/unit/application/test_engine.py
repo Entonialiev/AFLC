@@ -62,7 +62,6 @@ class TestExecutionEngine:
         assert self.repository.find_by_id(execution.execution_id) is not None
     
     def test_add_observation(self):
-        # Сначала создаём и отправляем в обработку
         execution = self.engine.submit_action(
             agent_id="agent-1",
             endpoint="/api/test",
@@ -70,7 +69,7 @@ class TestExecutionEngine:
             payload={}
         )
         execution.submit()
-        execution.start_processing()
+        execution.start()  # было start_processing()
         self.repository.save(execution)
         
         execution = self.engine.add_observation(
@@ -84,7 +83,6 @@ class TestExecutionEngine:
         assert execution.observations[0].value == 150.0
     
     def test_add_finding(self):
-        # Сначала создаём и отправляем в обработку
         execution = self.engine.submit_action(
             agent_id="agent-1",
             endpoint="/api/test",
@@ -92,7 +90,7 @@ class TestExecutionEngine:
             payload={}
         )
         execution.submit()
-        execution.start_processing()
+        execution.start()  # было start_processing()
         self.repository.save(execution)
         
         execution = self.engine.add_finding(
@@ -108,7 +106,6 @@ class TestExecutionEngine:
         assert execution.findings[0].source == "rule"
     
     def test_full_lifecycle(self):
-        # Submit
         execution = self.engine.submit_action(
             agent_id="agent-1",
             endpoint="/api/admin",
@@ -116,12 +113,10 @@ class TestExecutionEngine:
             payload={"user": "admin"}
         )
         
-        # Переводим в состояние RUNNING
         execution.submit()
-        execution.start_processing()
+        execution.start()  # было start_processing()
         self.repository.save(execution)
         
-        # Process
         execution = self.engine.add_observation(
             execution_id=execution.execution_id,
             metric="latency_ms",
@@ -137,7 +132,6 @@ class TestExecutionEngine:
             tags=["performance"]
         )
         
-        # Завершаем обработку
         execution.complete_processing()
         self.repository.save(execution)
         
@@ -174,11 +168,10 @@ class TestExecutionEngine:
         )
         
         execution.submit()
-        execution.start_processing()
+        execution.start()  # было start_processing()
         execution.complete_processing()
         self.repository.save(execution)
         
-        # Добавляем риск и решение
         execution = self.engine.complete_assessment(
             execution_id=execution.execution_id,
             risk_value=0.5,
