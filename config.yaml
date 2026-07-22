@@ -1,5 +1,5 @@
-# AFLC Configuration Example
-agent_id: "my-agent"
+# AFLC v0.6.0 Configuration
+agent_id: "demo-agent"
 window_size: 30
 severity_threshold: 0.3
 
@@ -18,7 +18,8 @@ detectors:
       alpha: 0.3
 
 correlator:
-  strategy: "weighted"
+  type: weighted
+  strategy: weighted
   threshold: 0.3
 
 risk:
@@ -28,9 +29,10 @@ risk:
     default: 0.3
 
 policy:
-  default_action: "continue"
+  type: default
   pause_threshold: 0.3
 
 memory:
+  type: default
   max_size: 10000
   storage_file: "flc_memory.json"
