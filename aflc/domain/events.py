@@ -2,7 +2,7 @@
 AFLC Domain Events
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Any
 from datetime import datetime
 from uuid import uuid4
@@ -14,167 +14,91 @@ from .enums import DecisionAction, EventType
 @dataclass(frozen=True, slots=True)
 class DomainEvent:
     """Base domain event."""
-    event_id: str
-    event_type: EventType
-    execution_id: str
-    timestamp: datetime
-
-    @staticmethod
-    def new_id() -> str:
-        return str(uuid4())
+    event_id: str = field(default_factory=lambda: str(uuid4()))
+    event_type: EventType = field(default=EventType.EXECUTION_CREATED)
+    execution_id: str = ""
+    timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
 @dataclass(frozen=True, slots=True)
 class ExecutionCreated(DomainEvent):
     """Execution has been created."""
-    command_id: str
-    action: Action
+    command_id: str = ""
+    action: Action = field(default_factory=lambda: None)
 
-    def __init__(
-        self,
-        execution_id: str,
-        command_id: str,
-        action: Action,
-        event_id: Optional[str] = None,
-        timestamp: Optional[datetime] = None
-    ):
-        super().__init__(
-            event_id=event_id or DomainEvent.new_id(),
-            event_type=EventType.EXECUTION_CREATED,
-            execution_id=execution_id,
-            timestamp=timestamp or datetime.utcnow()
-        )
-        object.__setattr__(self, "command_id", command_id)
-        object.__setattr__(self, "action", action)
+    def __post_init__(self):
+        # Убеждаемся, что все обязательные поля заполнены
+        if not self.command_id:
+            raise ValueError("command_id is required")
+        if self.action is None:
+            raise ValueError("action is required")
+        # Устанавливаем тип события
+        object.__setattr__(self, "event_type", EventType.EXECUTION_CREATED)
 
 
 @dataclass(frozen=True, slots=True)
 class ObservationAdded(DomainEvent):
     """Observation has been added to execution."""
-    observation: Observation
+    observation: Observation = field(default_factory=lambda: None)
 
-    def __init__(
-        self,
-        execution_id: str,
-        observation: Observation,
-        event_id: Optional[str] = None,
-        timestamp: Optional[datetime] = None
-    ):
-        super().__init__(
-            event_id=event_id or DomainEvent.new_id(),
-            event_type=EventType.OBSERVATION_ADDED,
-            execution_id=execution_id,
-            timestamp=timestamp or datetime.utcnow()
-        )
-        object.__setattr__(self, "observation", observation)
+    def __post_init__(self):
+        if self.observation is None:
+            raise ValueError("observation is required")
+        object.__setattr__(self, "event_type", EventType.OBSERVATION_ADDED)
 
 
 @dataclass(frozen=True, slots=True)
 class FindingProduced(DomainEvent):
     """Finding has been produced."""
-    finding: Finding
+    finding: Finding = field(default_factory=lambda: None)
 
-    def __init__(
-        self,
-        execution_id: str,
-        finding: Finding,
-        event_id: Optional[str] = None,
-        timestamp: Optional[datetime] = None
-    ):
-        super().__init__(
-            event_id=event_id or DomainEvent.new_id(),
-            event_type=EventType.FINDING_PRODUCED,
-            execution_id=execution_id,
-            timestamp=timestamp or datetime.utcnow()
-        )
-        object.__setattr__(self, "finding", finding)
+    def __post_init__(self):
+        if self.finding is None:
+            raise ValueError("finding is required")
+        object.__setattr__(self, "event_type", EventType.FINDING_PRODUCED)
 
 
 @dataclass(frozen=True, slots=True)
 class AssessmentCompleted(DomainEvent):
     """Assessment has been completed."""
-    findings: List[Finding]
-    risk_score: Any  # RiskScore
+    findings: List[Finding] = field(default_factory=list)
+    risk_score: Any = field(default_factory=lambda: None)
 
-    def __init__(
-        self,
-        execution_id: str,
-        findings: List[Finding],
-        risk_score: Any,
-        event_id: Optional[str] = None,
-        timestamp: Optional[datetime] = None
-    ):
-        super().__init__(
-            event_id=event_id or DomainEvent.new_id(),
-            event_type=EventType.ASSESSMENT_COMPLETED,
-            execution_id=execution_id,
-            timestamp=timestamp or datetime.utcnow()
-        )
-        object.__setattr__(self, "findings", findings)
-        object.__setattr__(self, "risk_score", risk_score)
+    def __post_init__(self):
+        if self.risk_score is None:
+            raise ValueError("risk_score is required")
+        object.__setattr__(self, "event_type", EventType.ASSESSMENT_COMPLETED)
 
 
 @dataclass(frozen=True, slots=True)
 class DecisionMade(DomainEvent):
     """Decision has been made."""
-    action: DecisionAction
-    reason: str
-    severity: float
+    action: DecisionAction = field(default=DecisionAction.ALLOW)
+    reason: str = ""
+    severity: float = 0.0
 
-    def __init__(
-        self,
-        execution_id: str,
-        action: DecisionAction,
-        reason: str,
-        severity: float,
-        event_id: Optional[str] = None,
-        timestamp: Optional[datetime] = None
-    ):
-        super().__init__(
-            event_id=event_id or DomainEvent.new_id(),
-            event_type=EventType.DECISION_MADE,
-            execution_id=execution_id,
-            timestamp=timestamp or datetime.utcnow()
-        )
-        object.__setattr__(self, "action", action)
-        object.__setattr__(self, "reason", reason)
-        object.__setattr__(self, "severity", severity)
+    def __post_init__(self):
+        if not self.reason:
+            raise ValueError("reason is required")
+        if not 0.0 <= self.severity <= 1.0:
+            raise ValueError("severity must be between 0 and 1")
+        object.__setattr__(self, "event_type", EventType.DECISION_MADE)
 
 
 @dataclass(frozen=True, slots=True)
 class ExplanationGenerated(DomainEvent):
     """Explanation has been generated."""
-    explanation: Explanation
+    explanation: Explanation = field(default_factory=lambda: None)
 
-    def __init__(
-        self,
-        execution_id: str,
-        explanation: Explanation,
-        event_id: Optional[str] = None,
-        timestamp: Optional[datetime] = None
-    ):
-        super().__init__(
-            event_id=event_id or DomainEvent.new_id(),
-            event_type=EventType.EXPLANATION_GENERATED,
-            execution_id=execution_id,
-            timestamp=timestamp or datetime.utcnow()
-        )
-        object.__setattr__(self, "explanation", explanation)
+    def __post_init__(self):
+        if self.explanation is None:
+            raise ValueError("explanation is required")
+        object.__setattr__(self, "event_type", EventType.EXPLANATION_GENERATED)
 
 
 @dataclass(frozen=True, slots=True)
 class ExecutionArchived(DomainEvent):
     """Execution has been archived."""
 
-    def __init__(
-        self,
-        execution_id: str,
-        event_id: Optional[str] = None,
-        timestamp: Optional[datetime] = None
-    ):
-        super().__init__(
-            event_id=event_id or DomainEvent.new_id(),
-            event_type=EventType.EXECUTION_ARCHIVED,
-            execution_id=execution_id,
-            timestamp=timestamp or datetime.utcnow()
-        )
+    def __post_init__(self):
+        object.__setattr__(self, "event_type", EventType.EXECUTION_ARCHIVED)
