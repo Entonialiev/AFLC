@@ -113,7 +113,6 @@ class PluginRegistry:
         cls = self.get_detector(name)
         if not cls:
             return None
-        # Проверяем, принимает ли конструктор config
         import inspect
         sig = inspect.signature(cls.__init__)
         if 'config' in sig.parameters or len(sig.parameters) > 1:
@@ -138,7 +137,6 @@ class PluginRegistry:
             return None
         import inspect
         sig = inspect.signature(cls.__init__)
-        # MemoryHistory принимает max_size, storage_file
         if 'max_size' in sig.parameters or 'storage_file' in sig.parameters:
             return cls(**(config or {}))
         return cls(config or {}) if config else cls()
