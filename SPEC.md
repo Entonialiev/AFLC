@@ -1,52 +1,161 @@
+## 🎯 План доведения AFLC до 10/10 и v1.0
+
+### 📅 Ближайшая неделя (v0.6.0 — Foundation)
+
+| Задача | Что сделать | Результат |
+|--------|-------------|-----------|
+| **1. Формальная спецификация** | Создать `SPEC.md` с описанием всех сущностей, интерфейсов, контрактов и жизненного цикла | Стабильный API, понятный для всех |
+| **2. Plugin Registry** | Реализовать `src/registry.py` для регистрации внешних детекторов, политик, корреляторов | Возможность расширять без изменения ядра |
+| **3. Интеграция с LangGraph** | Создать `integrations/langgraph.py` с адаптером | AFLC можно использовать в LangGraph-агентах |
+| **4. Бенчмарки** | Создать `benchmarks/` со сценариями (timeout, injection, errors) | Объективные доказательства эффективности |
+
+---
+
+### 📅 Следующие 2 недели (v0.7.0 — Ecosystem)
+
+| Задача | Что сделать | Результат |
+|--------|-------------|-----------|
+| **5. Интеграция с AutoGen** | Создать `integrations/autogen.py` | AFLC + AutoGen |
+| **6. Интеграция с CrewAI** | Создать `integrations/crewai.py` | AFLC + CrewAI |
+| **7. Документация API** | Сгенерировать docs из докстрингов (Sphinx/MkDocs) | Профессиональная документация |
+| **8. Дополнительные бенчмарки** | Добавить сценарии: нагрузка, каскадные ошибки | Полная картина эффективности |
+
+---
+
+### 📅 Релиз v1.0 (через месяц)
+
+| Задача | Что сделать | Результат |
+|--------|-------------|-----------|
+| **9. Стабильный API** | Зафиксировать все публичные интерфейсы | Обратная совместимость |
+| **10. Полная документация** | README + API docs + примеры + видео | Любой может начать использовать |
+| **11. Релиз на PyPI** | `pip install aflc` | Установка в одну команду |
+| **12. Публикация бенчмарков** | Статья с результатами | Доказательство эффективности |
+
+---
+
+## 🚀 Что делаем сегодня
+
+### 1. Создаём `SPEC.md`
+
+Создайте в корне репозитория файл `SPEC.md` и вставьте:
+
+```markdown
 # AFLC Specification v1.0
 
 ## 1. Core Concepts
 
 ### 1.1 ActionContext
-Полный контекст выполнения действия. Содержит:
-- `action_id`: уникальный идентификатор
-- `endpoint`: целевой эндпоинт
-- `method`: HTTP-метод
-- `latency_ms`: время выполнения
-- `error_code`: код ошибки
-- `user_id`: идентификатор пользователя
-- `history`: история предыдущих действий
+Полный контекст выполнения действия.
+
+**Поля:**
+- `action_id: str` — уникальный идентификатор
+- `endpoint: str` — целевой эндпоинт
+- `method: str` — HTTP-метод
+- `timestamp: float` — время выполнения
+- `latency_ms: float` — задержка в миллисекундах
+- `error_code: int` — код ошибки (0 = успех)
+- `response_size: int` — размер ответа в байтах
+- `user_id: Optional[str]` — идентификатор пользователя
+- `history: List[Dict]` — история предыдущих действий
+
+**Инварианты:**
+- `latency_ms >= 0`
+- `error_code >= 0`
+- `response_size >= 0`
 
 ### 1.2 Detection
-Результат работы детектора:
-- `source`: имя детектора
-- `score`: 0.0-1.0 (уверенность в аномалии)
-- `confidence`: 0.0-1.0 (доверие к детектору)
-- `reason`: текстовое объяснение
-- `tags`: метки для категоризации
+Результат работы детектора.
+
+**Поля:**
+- `source: str` — имя детектора
+- `score: float` — уверенность в аномалии (0.0-1.0)
+- `confidence: float` — доверие к детектору (0.0-1.0)
+- `reason: str` — текстовое объяснение
+- `tags: List[str]` — метки для категоризации
+
+**Инварианты:**
+- `0.0 <= score <= 1.0`
+- `0.0 <= confidence <= 1.0`
 
 ### 1.3 Decision
-Решение Policy Engine:
-- `action`: continue / pause / block / retry
-- `reason`: причина решения
-- `severity`: 0.0-1.0
-- `risk_score`: 0.0-1.0
+Решение Policy Engine.
+
+**Поля:**
+- `action: str` — действие (continue, pause, block, retry)
+- `reason: str` — причина решения
+- `severity: float` — серьёзность (0.0-1.0)
+- `confidence: float` — уверенность (0.0-1.0)
+- `risk_score: float` — оценка риска (0.0-1.0)
+- `explanation: str` — человекочитаемое объяснение
 
 ## 2. Lifecycle
 
 ```
-Action → Sensor → Detectors → Correlator → Risk → Policy → Memory → Explainer
+Action
+  ↓
+Sensor (сбор данных)
+  ↓
+Detectors (параллельно)
+  ↓
+Correlator (объединение)
+  ↓
+Risk Engine (оценка риска)
+  ↓
+Policy (принятие решения)
+  ↓
+Memory (сохранение)
+  ↓
+Explainer (объяснение)
 ```
 
-Каждый этап имеет чёткий вход и выход.
+## 3. Interfaces
 
-## 3. Plugins
+### 3.1 Detector
+```python
+class Detector:
+    def detect(self, context: ActionContext) -> Optional[Detection]:
+        ...
+```
 
-AFLC поддерживает плагины через интерфейсы:
-- `Detector`
-- `Correlator`
-- `Policy`
-- `Predictor`
-- `MemoryBackend`
+### 3.2 Correlator
+```python
+class Correlator:
+    def correlate(self, detections: List[Detection]) -> Optional[Detection]:
+        ...
+```
+
+### 3.3 Policy
+```python
+class Policy:
+    def decide(self, context: ActionContext, detection: Optional[Detection], 
+               risk: RiskScore) -> Decision:
+        ...
+```
 
 ## 4. Configuration
 
-Все настройки через YAML:
-- `config.yaml` — основной файл
-- Переменные окружения для секретов
+Все настройки через YAML. Основные параметры:
+- `agent_id` — идентификатор агента
+- `window_size` — размер окна для статистики
+- `severity_threshold` — порог для принятия решений
+- `detectors` — список активных детекторов с параметрами
+
+## 5. Versioning
+
+- Версия следует семантическому версионированию (MAJOR.MINOR.PATCH)
+- v0.x — нестабильный API (до v1.0)
+- v1.0 — стабильный API с обратной совместимостью
 ```
+
+---
+
+## 📊 Итоговый чек-лист
+
+| Задача | Статус |
+|--------|--------|
+| Создать `SPEC.md` | ⬜ |
+| Создать `src/registry.py` | ⬜ |
+| Создать `integrations/langgraph.py` | ⬜ |
+| Создать `benchmarks/` | ⬜ |
+| Обновить `README.md` | ⬜ |
+| Сделать релиз v0.6.0 | ⬜ |
