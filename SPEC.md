@@ -1,119 +1,157 @@
 # AFLC Specification v1.0
 
-## 1. Core Concepts
+## 1. Core Pipeline
 
-### 1.1 ActionContext
-Полный контекст выполнения действия.
-
-**Поля:**
-- `action_id: str` — уникальный идентификатор
-- `endpoint: str` — целевой эндпоинт
-- `method: str` — HTTP-метод
-- `timestamp: float` — время выполнения
-- `latency_ms: float` — задержка в миллисекундах
-- `error_code: int` — код ошибки (0 = успех)
-- `response_size: int` — размер ответа в байтах
-- `user_id: Optional[str]` — идентификатор пользователя
-- `history: List[Dict]` — история предыдущих действий
-
-**Инварианты:**
-- `latency_ms >= 0`
-- `error_code >= 0`
-- `response_size >= 0`
-
-### 1.2 Detection
-Результат работы детектора.
-
-**Поля:**
-- `source: str` — имя детектора
-- `score: float` — уверенность в аномалии (0.0-1.0)
-- `confidence: float` — доверие к детектору (0.0-1.0)
-- `reason: str` — текстовое объяснение
-- `tags: List[str]` — метки для категоризации
-
-**Инварианты:**
-- `0.0 <= score <= 1.0`
-- `0.0 <= confidence <= 1.0`
-
-### 1.3 Decision
-Решение Policy Engine.
-
-**Поля:**
-- `action: str` — действие (continue, pause, block, retry)
-- `reason: str` — причина решения
-- `severity: float` — серьёзность (0.0-1.0)
-- `confidence: float` — уверенность (0.0-1.0)
-- `risk_score: float` — оценка риска (0.0-1.0)
-- `explanation: str` — человекочитаемое объяснение
-
-## 2. Lifecycle
-
+### 1.1 Execution Flow
 ```
-Action
-  ↓
-Sensor (сбор данных)
-  ↓
-Detectors (параллельно)
-  ↓
-Correlator (объединение)
-  ↓
-Risk Engine (оценка риска)
-  ↓
-Policy (принятие решения)
-  ↓
-Memory (сохранение)
-  ↓
-Explainer (объяснение)
+Action → Context → Detectors → Correlator → Risk → Policy → Decision → Memory → Explainer
 ```
 
-## 3. Interfaces
+### 1.2 Data Contracts
 
-### 3.1 Detector
+#### ActionContext
+- **Purpose:** Immutable snapshot of an action execution.
+- **Fields:**
+  - `action_id: str` — Unique ID
+  - `endpoint: str` — Target endpoint
+  - `method: str` — HTTP method
+  - `latency_ms: float` — Execution time
+  - `error_code: int` — 0 = success
+  - `response_size: int` — Bytes
+- **Invariants:** `latency_ms >= 0`, `error_code >= 0`
+
+#### Detection
+- **Purpose:** Result of a single detector.
+- **Fields:**
+  - `source: str` — Detector name
+  - `score: float` — 0.0-1.0 (anomaly likelihood)
+  - `confidence: float` — 0.0-1.0 (detector trust)
+  - `reason: str` — Human-readable explanation
+- **Invariants:** `0.0 <= score <= 1.0`, `0.0 <= confidence <= 1.0`
+
+#### Decision
+- **Purpose:** Final decision by Policy.
+- **Fields:**
+  - `action: str` — "continue" | "pause" | "block" | "retry"
+  - `reason: str`
+  - `severity: float` — 0.0-1.0
+  - `risk_score: float` — 0.0-1.0
+- **Invariants:** `action in ['continue', 'pause', 'block', 'retry']`
+
+## 2. Plugin Contracts
+
+### 2.1 Detector Interface
 ```python
 class Detector:
     def detect(self, context: ActionContext) -> Optional[Detection]:
-        ...
+        """Returns Detection if anomaly found, else None."""
 ```
 
-### 3.2 Correlator
-```python
-class Correlator:
-    def correlate(self, detections: List[Detection]) -> Optional[Detection]:
-        ...
-```
-
-### 3.3 Policy
+### 2.2 Policy Interface
 ```python
 class Policy:
-    def decide(self, context: ActionContext, detection: Optional[Detection], 
-               risk: RiskScore) -> Decision:
-        ...
+    def decide(self, context: ActionContext, detection: Optional[Detection], risk: RiskScore) -> Decision:
+        """Returns a Decision."""
 ```
 
-## 4. Configuration
+## 3. Versioning
 
-Все настройки через YAML. Основные параметры:
-- `agent_id` — идентификатор агента
-- `window_size` — размер окна для статистики
-- `severity_threshold` — порог для принятия решений
-- `detectors` — список активных детекторов с параметрами
-
-## 5. Versioning
-
-- Версия следует семантическому версионированию (MAJOR.MINOR.PATCH)
-- v0.x — нестабильный API (до v1.0)
-- v1.0 — стабильный API с обратной совместимостью
+- **MAJOR** — Breaking changes to public API.
+- **MINOR** — New features (backward compatible).
+- **PATCH** — Bug fixes.
+- v1.0.0 — Stable API with backward compatibility guarantees.
 ```
 
 ---
 
-## 📊 Итоговый чек-лист
+### 2. Рефакторинг: Общий Pipeline
 
-| Задача | Статус |
-|--------|--------|
-| Создать `SPEC.md` | ⬜ |
-| Создать `src/registry.py` | ⬜ |
-| Создать `integrations/langgraph.py` | ⬜ |
-| Создать `benchmarks/` | ⬜ |
-| Обновить `README.md` | ⬜ |
-| Сделать релиз v0.6.0 | ⬜ |
+Вместо дублирования кода в `_execute_action` и `async_execute`, мы создадим единый **`Pipeline`**, который умеет работать и синхронно, и асинхронно.
+
+**Схема:**
+
+```python
+class Pipeline:
+    def __init__(self, steps: List[PipelineStep]):
+        self.steps = steps
+    
+    def run(self, context: ActionContext) -> Decision:
+        # Синхронный запуск
+        for step in self.steps:
+            context = step.execute(context)
+        return context.decision
+    
+    async def run_async(self, context: ActionContext) -> Decision:
+        # Асинхронный запуск
+        for step in self.steps:
+            context = await step.execute_async(context)
+        return context.decision
+```
+
+**Где каждый шаг — это:**
+
+```python
+class SensorStep(PipelineStep): ...
+class DetectorStep(PipelineStep): ...
+class CorrelatorStep(PipelineStep): ...
+class RiskStep(PipelineStep): ...
+class PolicyStep(PipelineStep): ...
+class MemoryStep(PipelineStep): ...
+class ExplainerStep(PipelineStep): ...
+```
+
+---
+
+### 3. Разделить Registry на Factory + Registry
+
+**Сейчас:** Registry делает всё.
+
+**Стало:**
+- `Registry` — хранит информацию о доступных классах.
+- `Factory` — создаёт экземпляры с параметрами.
+- `DI Container` — управляет зависимостями.
+
+---
+
+### 4. Сделать EventBus асинхронным и надёжным
+
+Заменить синхронный вызов слушателей на:
+
+```python
+async def publish(self, event: Event):
+    tasks = [listener(event) for listener in self._listeners.get(event.name, [])]
+    await asyncio.gather(*tasks, return_exceptions=True)
+```
+
+Это не даст одному обработчику заблокировать остальные.
+
+---
+
+### 5. Добавить HistoryBackend
+
+Вместо `self.history = []`:
+
+```python
+class HistoryBackend:
+    def add(self, record: Dict): ...
+    def get_recent(self, limit: int): ...
+    def get_stats(self): ...
+```
+
+Реализации:
+- `MemoryHistory` — для тестов.
+- `SQLiteHistory` — для лёгких продакшен-систем.
+- `RedisHistory` — для высоких нагрузок.
+
+---
+
+## 📋 Чек-лист к v1.0
+
+| Задача | Приоритет | Статус |
+|--------|-----------|--------|
+| 1. Обновить `SPEC.md` | 🔥 Критический | ⬜ |
+| 2. Создать `Pipeline` вместо дублирования | 🔥 Критический | ⬜ |
+| 3. Разделить Registry → Factory + Registry | Высокий | ⬜ |
+| 4. Сделать EventBus асинхронным | Высокий | ⬜ |
+| 5. Добавить HistoryBackend | Средний | ⬜ |
+| 6. Обновить документацию и примеры | Средний | ⬜ |
