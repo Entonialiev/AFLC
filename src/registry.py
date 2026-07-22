@@ -1,6 +1,6 @@
 """
 Plugin Registry для AFLC
-Version: 2.1.0 (hardened plugin SDK)
+Version: 2.1.1 (fixed validation and register_risk_engine)
 """
 
 from typing import Dict, Type, Optional, Any, List, Callable, Tuple
@@ -41,10 +41,6 @@ class PluginInfo:
 class PluginRegistry:
     """
     Единый реестр всех плагинов AFLC.
-    
-    Все плагины следуют единому контракту:
-    - Конструктор принимает только `config: Optional[Dict] = None`
-    - Имеют методы `initialize()` и `shutdown()`, если реализуют Plugin
     """
     
     _instance = None
@@ -85,7 +81,6 @@ class PluginRegistry:
         from .history import MemoryHistory, SQLiteHistory
         from .defaults import DefaultPolicy, SimpleCorrelator
         
-        # Детекторы
         self.register(
             "detectors", "rule", RuleDetector,
             metadata=PluginMetadata(
@@ -103,7 +98,6 @@ class PluginRegistry:
             )
         )
         
-        # Корреляторы
         self.register(
             "correlators", "weighted", DefaultCorrelator,
             metadata=PluginMetadata(
@@ -121,7 +115,6 @@ class PluginRegistry:
             )
         )
         
-        # Политики
         self.register(
             "policies", "default", DefaultPolicy,
             metadata=PluginMetadata(
@@ -131,7 +124,6 @@ class PluginRegistry:
             )
         )
         
-        # Risk Engine
         self.register(
             "risk_engines", "default", RiskEngine,
             metadata=PluginMetadata(
@@ -141,7 +133,6 @@ class PluginRegistry:
             )
         )
         
-        # History Backends
         self.register(
             "history_backends", "memory", MemoryHistory,
             metadata=PluginMetadata(
@@ -166,16 +157,12 @@ class PluginRegistry:
         plugin_class: Type,
         metadata: Optional[PluginMetadata] = None
     ) -> None:
-        """
-        Унифицированная регистрация плагина.
-        """
         if category not in self._categories:
             raise ValueError(f"Unknown category: {category}")
         
         if name in self._categories[category]:
             logger.warning(f"Overwriting plugin: {category}/{name}")
         
-        # Проверяем версию Python
         if metadata:
             min_py = metadata.min_python_version
             if sys.version_info < min_py:
@@ -183,7 +170,6 @@ class PluginRegistry:
                     f"Plugin {category}/{name} requires Python {'.'.join(map(str, min_py))}"
                 )
         
-        # Проверяем, что плагин имеет правильный конструктор
         self._validate_plugin_class(plugin_class)
         
         if metadata is None:
@@ -200,6 +186,10 @@ class PluginRegistry:
     def _validate_plugin_class(self, plugin_class: Type) -> None:
         """
         Проверяет, что конструктор плагина совместим с системой.
+        Допускаются:
+        - __init__(self) — без параметров
+        - __init__(self, config: Optional[Dict] = None)
+        - __init__(self, **kwargs)
         """
         sig = inspect.signature(plugin_class.__init__)
         params = list(sig.parameters.values())
@@ -207,13 +197,12 @@ class PluginRegistry:
         # Пропускаем self
         params = params[1:]
         
-        if len(params) > 1:
-            raise TypeError(
-                f"Plugin {plugin_class.__name__} has too many parameters. "
-                f"Only `config: Optional[Dict] = None` is allowed."
-            )
+        # Если нет параметров — OK
+        if not params:
+            return
         
-        if params:
+        # Если ровно один параметр
+        if len(params) == 1:
             param = params[0]
             # Проверяем, что это config или **kwargs
             is_config = param.name == 'config'
@@ -222,22 +211,25 @@ class PluginRegistry:
             if not is_config and not is_kwargs:
                 raise TypeError(
                     f"Plugin {plugin_class.__name__} parameter must be "
-                    f"`config: Optional[Dict] = None` or `**kwargs`."
+                    f"`config: Optional[Dict] = None` or `**kwargs`, got `{param.name}`."
                 )
+            return
+        
+        # Если больше одного параметра
+        raise TypeError(
+            f"Plugin {plugin_class.__name__} has too many parameters ({len(params)}). "
+            f"Only `config: Optional[Dict] = None` or no parameters are allowed."
+        )
     
     def get(self, category: str, name: str) -> Optional[PluginInfo]:
         return self._categories.get(category, {}).get(name)
     
     def create(self, category: str, name: str, config: Optional[Dict] = None) -> Optional[Any]:
-        """
-        Унифицированное создание экземпляра плагина.
-        """
         info = self.get(category, name)
         if not info:
             logger.warning(f"Plugin not found: {category}/{name}")
             return None
         
-        # Проверяем депрекацию
         if info.metadata.deprecated:
             logger.warning(
                 f"Plugin {category}/{name} is deprecated since {info.metadata.deprecated_since}. "
@@ -247,9 +239,7 @@ class PluginRegistry:
         try:
             sig = inspect.signature(info.plugin_class.__init__)
             params = list(sig.parameters.values())
-            
-            # Пропускаем self
-            params = params[1:]
+            params = params[1:]  # пропускаем self
             
             if not params:
                 instance = info.plugin_class()
@@ -258,13 +248,10 @@ class PluginRegistry:
                 if param.name == 'config':
                     instance = info.plugin_class(config=config or {})
                 elif param.kind == inspect.Parameter.VAR_KEYWORD:
-                    # Для плагинов вида __init__(self, **kwargs)
                     instance = info.plugin_class(**(config or {}))
                 else:
-                    # Fallback: просто передаём config как аргумент
                     instance = info.plugin_class(config or {})
             
-            # Вызываем initialize(), если плагин реализует Plugin
             if isinstance(instance, Plugin):
                 instance.initialize()
             
@@ -335,6 +322,16 @@ class PluginRegistry:
             tags=kwargs.get("tags", [])
         )
         self.register("history_backends", name, backend_class, metadata)
+    
+    def register_risk_engine(self, name: str, risk_class: Type, **kwargs):
+        """Регистрирует Risk Engine плагин"""
+        metadata = PluginMetadata(
+            name=name,
+            version=kwargs.get("version", "1.0.0"),
+            description=kwargs.get("description", ""),
+            tags=kwargs.get("tags", [])
+        )
+        self.register("risk_engines", name, risk_class, metadata)
     
     def create_detector(self, name: str, config: Optional[Dict] = None):
         return self.create("detectors", name, config)
