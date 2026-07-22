@@ -89,7 +89,6 @@ class Execution:
         self.created_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
 
-        # Добавляем событие создания
         self.events.append(
             ExecutionCreated(
                 execution_id=self.execution_id,
@@ -151,6 +150,10 @@ class Execution:
             execution_id=self.execution_id,
             explanation=explanation
         ))
+
+    def store(self) -> None:
+        """Store execution."""
+        self._transition_to(ExecutionStatus.STORED)
 
     def archive(self) -> None:
         """Archive execution."""
