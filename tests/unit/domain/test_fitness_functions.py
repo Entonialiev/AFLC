@@ -52,24 +52,18 @@ def test_value_objects_are_frozen():
     for name in value_objects:
         cls = getattr(vo, name, None)
         if cls:
-            # Проверяем, что класс является dataclass с frozen=True
             assert hasattr(cls, "__dataclass_fields__"), f"{name} is not a dataclass"
-            # Проверяем, что frozen=True через параметры dataclass
-            # В Python 3.9 нет прямого способа, проверяем, что объект неизменяем
             if name in ["RiskScore", "Confidence", "SeverityValue", "Finding"]:
-                # Эти классы имеют __post_init__, значит они должны быть frozen
                 assert hasattr(cls, "__post_init__"), f"{name} should have __post_init__"
 
 
 def test_execution_is_aggregate_root():
     """Execution must be the only Aggregate Root in domain."""
     from aflc.domain.execution import Execution
-
-    # Проверяем, что Execution является Aggregate Root
-    # Создаём экземпляр для проверки атрибутов
     from aflc.domain.value_objects import Action, Command
     from datetime import datetime
-    
+
+    # Создаём экземпляр для проверки атрибутов
     action = Action(
         action_id="test",
         agent_id="test",
@@ -84,9 +78,9 @@ def test_execution_is_aggregate_root():
         payload={},
         timestamp=datetime.utcnow()
     )
-    
+
     execution = Execution(action, command)
-    
+
     # Проверяем, что у экземпляра есть необходимые атрибуты
     assert hasattr(execution, "execution_id")
     assert hasattr(execution, "get_events")
