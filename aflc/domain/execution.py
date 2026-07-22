@@ -89,7 +89,14 @@ class Execution:
         self.created_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
 
-        self._add_event(ExecutionCreated(self.execution_id, command.command_id, action))
+        # Добавляем событие создания
+        self.events.append(
+            ExecutionCreated(
+                execution_id=self.execution_id,
+                command_id=command.command_id,
+                action=action
+            )
+        )
 
     # --- Lifecycle Methods ---
 
@@ -116,7 +123,7 @@ class Execution:
         self.risk_score = risk_score
         self._transition_to(ExecutionStatus.RISK_EVALUATED)
         self._add_event(AssessmentCompleted(
-            self.execution_id, self.findings, risk_score
+            self.execution_id, self.findings.copy(), risk_score
         ))
 
     def make_decision(self, action: DecisionAction, reason: str, severity: float) -> None:
