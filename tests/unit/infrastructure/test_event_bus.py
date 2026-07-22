@@ -19,7 +19,7 @@ class TestMemoryEventBus:
             nonlocal called
             called = True
 
-        bus.subscribe("test_event", handler=handler)
+        bus.subscribe(EventType.EXECUTION_CREATED, handler=handler)
         event = DomainEvent(event_type=EventType.EXECUTION_CREATED)
         bus.publish(event)
 
@@ -33,7 +33,7 @@ class TestMemoryEventBus:
             nonlocal called
             called = True
 
-        bus.subscribe("test_event", async_handler=async_handler)
+        bus.subscribe(EventType.EXECUTION_CREATED, async_handler=async_handler)
         event = DomainEvent(event_type=EventType.EXECUTION_CREATED)
 
         asyncio.run(bus.publish_async(event))
@@ -52,8 +52,8 @@ class TestMemoryEventBus:
             nonlocal called2
             called2 = True
 
-        bus.subscribe("test_event", handler=handler1)
-        bus.subscribe("test_event", handler=handler2)
+        bus.subscribe(EventType.EXECUTION_CREATED, handler=handler1)
+        bus.subscribe(EventType.EXECUTION_CREATED, handler=handler2)
 
         event = DomainEvent(event_type=EventType.EXECUTION_CREATED)
         bus.publish(event)
@@ -69,8 +69,8 @@ class TestMemoryEventBus:
             nonlocal called
             called = True
 
-        bus.subscribe("test_event", handler=handler)
-        bus.unsubscribe("test_event", handler)
+        bus.subscribe(EventType.EXECUTION_CREATED, handler=handler)
+        bus.unsubscribe(EventType.EXECUTION_CREATED, handler)
 
         event = DomainEvent(event_type=EventType.EXECUTION_CREATED)
         bus.publish(event)
@@ -85,10 +85,25 @@ class TestMemoryEventBus:
             nonlocal called
             called = True
 
-        bus.subscribe("test_event", handler=handler)
+        bus.subscribe(EventType.EXECUTION_CREATED, handler=handler)
         bus.clear()
 
         event = DomainEvent(event_type=EventType.EXECUTION_CREATED)
         bus.publish(event)
 
         assert called is False
+
+    def test_subscribe_with_string(self):
+        """Test subscribing with string event type."""
+        bus = MemoryEventBus()
+        called = False
+
+        def handler(event):
+            nonlocal called
+            called = True
+
+        bus.subscribe("execution_created", handler=handler)
+        event = DomainEvent(event_type=EventType.EXECUTION_CREATED)
+        bus.publish(event)
+
+        assert called is True
