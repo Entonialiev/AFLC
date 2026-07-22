@@ -1,4 +1,4 @@
-# AFLC v0.6.0 Configuration
+# AFLC v0.7.0 Configuration
 agent_id: "demo-agent"
 window_size: 30
 severity_threshold: 0.3
@@ -9,7 +9,6 @@ detectors:
     params:
       timeout_limit_ms: 2000
       size_limit_bytes: 1000000
-  
   statistical:
     enabled: true
     params:
@@ -19,20 +18,30 @@ detectors:
 
 correlator:
   type: weighted
-  strategy: weighted
-  threshold: 0.3
+  params:
+    strategy: weighted
+    threshold: 0.3
 
 risk:
-  endpoint_base_risk:
-    /admin: 0.9
-    /api/admin: 0.85
-    default: 0.3
+  type: default
+  params:
+    endpoint_base_risk:
+      /admin: 0.9
+      /api/admin: 0.85
+      default: 0.3
 
 policy:
   type: default
-  pause_threshold: 0.3
+  params:
+    pause_threshold: 0.3
 
 memory:
   type: default
-  max_size: 10000
-  storage_file: "flc_memory.json"
+  params:
+    max_size: 10000
+    storage_file: "flc_memory.json"
+
+history:
+  type: memory
+  params:
+    max_size: 1000
