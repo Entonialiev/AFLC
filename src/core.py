@@ -1,6 +1,6 @@
 """
 AFLC - Adaptive Feedback Loop Core
-Version: 0.7.3 (final circular import fix)
+Version: 0.7.4 (final)
 """
 
 from typing import Dict, List, Optional, Any, Callable, Union
@@ -23,22 +23,6 @@ logger = logging.getLogger("aflc")
 class AdaptiveFeedbackLoopCore:
     """
     Главный класс AFLC. Оркестрирует все компоненты.
-    
-    Usage:
-        flc = AdaptiveFeedbackLoopCore(agent_id="my-agent")
-        flc.register_detector(RuleDetector())
-        flc.register_correlator(Correlator())
-        flc.register_risk_engine(RiskEngine())
-        flc.register_policy(DefaultPolicy())
-        flc.register_explainer(Explainer())
-        flc.register_memory(Memory())
-        flc.register_history_backend(SQLiteHistory())
-        
-        # Синхронный вызов
-        decision = flc.execute(my_action, endpoint="/api/users", method="GET")
-        
-        # Асинхронный вызов
-        decision = await flc.async_execute(my_action, endpoint="/api/users", method="GET")
     """
     
     def __init__(self, agent_id: str, config: Optional[Dict] = None):
@@ -90,6 +74,7 @@ class AdaptiveFeedbackLoopCore:
         agent_id = data.get("agent_id", "default-agent")
         flc = cls(agent_id=agent_id, config=data)
         
+        # Детекторы
         for name, detector_config in data.get("detectors", {}).items():
             if not detector_config.get("enabled", True):
                 continue
@@ -97,31 +82,63 @@ class AdaptiveFeedbackLoopCore:
             if detector:
                 flc.register_detector(detector)
                 logger.info(f"Registered detector: {name}")
-            else:
-                logger.warning(f"Detector not found in registry: {name}")
         
-        correlator_name = data.get("correlator", {}).get("type", "weighted")
-        correlator = registry.create_correlator(correlator_name, data.get("correlator", {}))
+        # Коррелятор
+        correlator_config = data.get("correlator", {})
+        if isinstance(correlator_config, dict):
+            correlator_name = correlator_config.get("type", "weighted")
+            correlator_params = correlator_config.get("params", {})
+        else:
+            correlator_name = "weighted"
+            correlator_params = {}
+        correlator = registry.create_correlator(correlator_name, correlator_params)
         if correlator:
             flc.register_correlator(correlator)
         
-        risk_engine = registry.create_risk_engine(data.get("risk", {}))
+        # Risk Engine
+        risk_config = data.get("risk", {})
+        if isinstance(risk_config, dict):
+            risk_name = risk_config.get("type", "default")
+            risk_params = risk_config.get("params", {})
+        else:
+            risk_name = "default"
+            risk_params = {}
+        risk_engine = registry.create_risk_engine(risk_name, risk_params)
         if risk_engine:
             flc.register_risk_engine(risk_engine)
         
-        policy_name = data.get("policy", {}).get("type", "default")
-        policy = registry.create_policy(policy_name, data.get("policy", {}))
+        # Policy
+        policy_config = data.get("policy", {})
+        if isinstance(policy_config, dict):
+            policy_name = policy_config.get("type", "default")
+            policy_params = policy_config.get("params", {})
+        else:
+            policy_name = "default"
+            policy_params = {}
+        policy = registry.create_policy(policy_name, policy_params)
         if policy:
             flc.register_policy(policy)
         
+        # Memory
         memory_config = data.get("memory", {})
-        memory = registry.create_memory(memory_config.get("type", "default"), memory_config)
+        if isinstance(memory_config, dict):
+            memory_name = memory_config.get("type", "default")
+            memory_params = memory_config.get("params", {})
+        else:
+            memory_name = "default"
+            memory_params = {}
+        memory = registry.create_memory(memory_name, memory_params)
         if memory:
             flc.register_memory(memory)
         
+        # History Backend
         history_config = data.get("history", {})
-        history_type = history_config.get("type", "memory")
-        history_params = history_config.get("params", {})
+        if isinstance(history_config, dict):
+            history_type = history_config.get("type", "memory")
+            history_params = history_config.get("params", {})
+        else:
+            history_type = "memory"
+            history_params = {}
         
         if history_type == "sqlite":
             flc.register_history_backend(SQLiteHistory(**history_params))
@@ -252,34 +269,3 @@ class AdaptiveFeedbackLoopCore:
         if self.history_backend:
             stats["history"] = self.history_backend.get_stats()
         return stats
-
-
-if __name__ == "__main__":
-    print("🔁 AFLC v0.7.3 — Circular Import Fixed")
-    print("=" * 50)
-    
-    flc = AdaptiveFeedbackLoopCore(agent_id="demo-agent")
-    
-    # Регистрируем через реестр
-    policy = registry.create_policy("default")
-    correlator = registry.create_correlator("simple")
-    
-    if policy:
-        flc.register_policy(policy)
-    if correlator:
-        flc.register_correlator(correlator)
-    
-    from .history import MemoryHistory
-    flc.register_history_backend(MemoryHistory(max_size=100))
-    
-    def my_action(delay_ms=100):
-        import time
-        time.sleep(delay_ms / 1000.0)
-        return {"status": "ok"}
-    
-    print("\n🔄 Выполнение действий:")
-    for i in range(3):
-        decision = flc.execute(my_action, 50 + i * 10, endpoint="/api/test", method="GET")
-        print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
-    
-    print(f"\n📊 Статистика: {flc.get_stats()}")
