@@ -1,5 +1,6 @@
 """
 Plugin Registry для AFLC
+Version: 1.0.1
 """
 
 from typing import Dict, Type, Optional, Any, List
