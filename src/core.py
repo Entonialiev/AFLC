@@ -1,12 +1,13 @@
 """
 AFLC - Adaptive Feedback Loop Core
 Industrial-grade framework for AI agent self-correction
-Version: 0.4.0 (with YAML config support)
+Version: 0.5.0 (with YAML config, async support, and plugin registry integration)
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any, Callable, Union
 import time
+import asyncio
 
 
 # --- БАЗОВЫЕ СУЩНОСТИ ---
@@ -116,7 +117,11 @@ class AdaptiveFeedbackLoopCore:
         flc.register_explainer(Explainer())
         flc.register_memory(Memory())
         
+        # Синхронный вызов
         decision = flc.execute(my_action, endpoint="/api/users", method="GET")
+        
+        # Асинхронный вызов
+        decision = await flc.async_execute(my_action, endpoint="/api/users", method="GET")
     """
     
     def __init__(self, agent_id: str, config: Optional[Dict] = None):
@@ -213,7 +218,8 @@ class AdaptiveFeedbackLoopCore:
         self.memory = memory
         return self
     
-    def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
+    def _execute_action(self, action_func: Callable, *args, **kwargs) -> tuple:
+        """Выполняет действие и возвращает (context, detections, decision)"""
         self.action_counter += 1
         action_id = f"{self.agent_id}-{self.action_counter:04d}"
         
@@ -327,6 +333,25 @@ class AdaptiveFeedbackLoopCore:
         })
         self.last_decision = decision
         
+        return context, detections, decision
+    
+    def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
+        """
+        Синхронное выполнение действия.
+        """
+        _, _, decision = self._execute_action(action_func, *args, **kwargs)
+        return decision
+    
+    async def async_execute(self, action_func: Callable, *args, **kwargs) -> Decision:
+        """
+        Асинхронное выполнение действия.
+        """
+        # Для асинхронной версии мы выполняем действие в отдельном потоке,
+        # чтобы не блокировать event loop
+        loop = asyncio.get_event_loop()
+        context, detections, decision = await loop.run_in_executor(
+            None, self._execute_action, action_func, *args, **kwargs
+        )
         return decision
     
     def reset(self):
@@ -382,7 +407,7 @@ class SimpleCorrelator(Correlator):
 # --- ПРИМЕР ---
 
 if __name__ == "__main__":
-    print("🔁 AFLC v0.4.0 — Full Pipeline")
+    print("🔁 AFLC v0.5.0 — Full Pipeline with Async")
     print("=" * 50)
     
     flc = AdaptiveFeedbackLoopCore(agent_id="demo-agent")
@@ -394,7 +419,9 @@ if __name__ == "__main__":
         time.sleep(delay_ms / 1000.0)
         return {"status": "ok"}
     
-    for i in range(5):
+    # Синхронный вызов
+    print("\n🔄 Синхронный вызов:")
+    for i in range(3):
         decision = flc.execute(
             my_action, 50 + i * 10,
             endpoint="/api/test",
@@ -402,12 +429,17 @@ if __name__ == "__main__":
         )
         print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
     
-    print("\n🔴 Аномальное действие:")
-    decision = flc.execute(
-        my_action, 3000,
-        endpoint="/api/test",
-        method="GET"
-    )
-    print(f"  → {decision.action}: {decision.reason}")
+    # Асинхронный вызов
+    print("\n⚡ Асинхронный вызов:")
+    async def run_async():
+        for i in range(3):
+            decision = await flc.async_execute(
+                my_action, 50 + i * 10,
+                endpoint="/api/test",
+                method="GET"
+            )
+            print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
+    
+    asyncio.run(run_async())
     
     print(f"\n📊 Статистика: {flc.get_stats()}")
