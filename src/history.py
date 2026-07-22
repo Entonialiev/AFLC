@@ -1,63 +1,40 @@
 """
 History Backend for AFLC
-Version: 1.0.0
+Version: 2.0.0 (with ABC)
 """
 
 from typing import Dict, List, Optional, Any
-from abc import ABC, abstractmethod
 import json
 import sqlite3
 import time
 from collections import deque
+import logging
 
-from .interfaces import Memory
+from .interfaces import HistoryBackend
 
-
-class HistoryBackend(ABC):
-    """Абстрактный базовый класс для бэкендов истории"""
-    
-    @abstractmethod
-    def add(self, record: Dict[str, Any]) -> None:
-        """Добавляет запись в историю"""
-        pass
-    
-    @abstractmethod
-    def get_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Возвращает последние записи"""
-        pass
-    
-    @abstractmethod
-    def get_stats(self) -> Dict[str, Any]:
-        """Возвращает статистику"""
-        pass
-    
-    @abstractmethod
-    def clear(self) -> None:
-        """Очищает историю"""
-        pass
+logger = logging.getLogger("aflc.history")
 
 
 class MemoryHistory(HistoryBackend):
     """In-memory реализация с ограничением размера"""
     
-    def __init__(self, max_size: int = 10000, storage_file: Optional[str] = None):
-        self.max_size = max_size
-        self.storage_file = storage_file
-        self._records: deque = deque(maxlen=max_size)
+    def __init__(self, config: Optional[Dict] = None):
+        config = config or {}
+        self.max_size = config.get("max_size", 10000)
+        self.storage_file = config.get("storage_file", None)
+        self._records: deque = deque(maxlen=self.max_size)
         self._load()
     
     def _load(self):
-        """Загружает данные из файла, если он указан"""
         if self.storage_file:
             try:
                 with open(self.storage_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self._records.extend(data)
-            except (FileNotFoundError, json.JSONDecodeError):
-                pass
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                logger.debug(f"Loading history: {e}")
     
     def _save(self):
-        """Сохраняет данные в файл, если он указан"""
         if self.storage_file:
             with open(self.storage_file, 'w', encoding='utf-8') as f:
                 json.dump(list(self._records), f, ensure_ascii=False)
@@ -86,13 +63,13 @@ class MemoryHistory(HistoryBackend):
 class SQLiteHistory(HistoryBackend):
     """SQLite реализация для постоянного хранения"""
     
-    def __init__(self, db_path: str = "aflc_history.db", max_records: int = 100000):
-        self.db_path = db_path
-        self.max_records = max_records
+    def __init__(self, config: Optional[Dict] = None):
+        config = config or {}
+        self.db_path = config.get("db_path", "aflc_history.db")
+        self.max_records = config.get("max_records", 100000)
         self._init_db()
     
     def _init_db(self) -> None:
-        """Инициализирует таблицу в SQLite"""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS history (
@@ -109,12 +86,8 @@ class SQLiteHistory(HistoryBackend):
                     metadata TEXT
                 )
             """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_timestamp ON history(timestamp)
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_endpoint ON history(endpoint)
-            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON history(timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_endpoint ON history(endpoint)")
     
     def add(self, record: Dict[str, Any]) -> None:
         with sqlite3.connect(self.db_path) as conn:
@@ -136,15 +109,16 @@ class SQLiteHistory(HistoryBackend):
                 record.get("risk_score", 0.0),
                 json.dumps(record.get("metadata", {}))
             ))
-            
-            # Ограничиваем количество записей
-            conn.execute("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY timestamp DESC LIMIT ?)", (self.max_records,))
+            conn.execute(
+                "DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY timestamp DESC LIMIT ?)",
+                (self.max_records,)
+            )
     
     def get_recent(self, limit: int = 10) -> List[Dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("""
-                SELECT * FROM history ORDER BY timestamp DESC LIMIT ?
-            """, (limit,))
+            cursor = conn.execute(
+                "SELECT * FROM history ORDER BY timestamp DESC LIMIT ?", (limit,)
+            )
             rows = cursor.fetchall()
             return [
                 {
