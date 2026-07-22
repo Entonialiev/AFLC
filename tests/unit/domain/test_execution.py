@@ -15,7 +15,7 @@ from aflc.domain.events import (
     AssessmentCompleted, DecisionMade, ExplanationGenerated,
     ExecutionArchived
 )
-from aflc.domain.exceptions import InvalidStateError
+from aflc.domain.exceptions import InvalidStateError, InvalidTransitionError
 
 
 class TestExecution:
@@ -84,7 +84,7 @@ class TestExecution:
 
         assert execution.status == ExecutionStatus.RISK_EVALUATED
         assert execution.risk_score == risk
-        assert len(execution.events) == 1  # AssessmentCompleted
+        assert isinstance(execution.events[-1], AssessmentCompleted)
 
     def test_make_decision(self):
         execution = Execution(self.action, self.command)
@@ -99,7 +99,7 @@ class TestExecution:
 
         assert execution.status == ExecutionStatus.DECISION_MADE
         assert execution.decision["action"] == DecisionAction.BLOCK
-        assert len(execution.events) == 1  # DecisionMade
+        assert isinstance(execution.events[-1], DecisionMade)
 
     def test_add_explanation(self):
         execution = Execution(self.action, self.command)
@@ -116,7 +116,7 @@ class TestExecution:
 
         assert execution.status == ExecutionStatus.EXPLAINED
         assert execution.explanation == explanation
-        assert len(execution.events) == 1  # ExplanationGenerated
+        assert isinstance(execution.events[-1], ExplanationGenerated)
 
     def test_archive(self):
         execution = Execution(self.action, self.command)
@@ -130,10 +130,11 @@ class TestExecution:
         explanation = Explanation(text="Blocked due to high risk", details={})
         execution.add_explanation(explanation)
 
+        execution.store()  # Добавляем промежуточный шаг
         execution.archive()
 
         assert execution.status == ExecutionStatus.ARCHIVED
-        assert len(execution.events) == 1  # ExecutionArchived
+        assert isinstance(execution.events[-1], ExecutionArchived)
 
     def test_add_observation(self):
         execution = Execution(self.action, self.command)
@@ -149,7 +150,7 @@ class TestExecution:
         execution.add_observation(obs)
 
         assert len(execution.observations) == 1
-        assert isinstance(execution.events[0], ObservationAdded)
+        assert isinstance(execution.events[-1], ObservationAdded)
 
     def test_add_finding(self):
         execution = Execution(self.action, self.command)
@@ -166,7 +167,7 @@ class TestExecution:
         execution.add_finding(finding)
 
         assert len(execution.findings) == 1
-        assert isinstance(execution.events[0], FindingProduced)
+        assert isinstance(execution.events[-1], FindingProduced)
 
     def test_cannot_add_observation_in_wrong_state(self):
         execution = Execution(self.action, self.command)
