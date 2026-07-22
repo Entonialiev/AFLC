@@ -13,8 +13,8 @@ from .value_objects import (
     Explanation, ExecutionContext, Confidence, SeverityValue
 )
 from .events import (
-    DomainEvent, ExecutionCreated, ObservationAdded,
-    FindingProduced, AssessmentCompleted, DecisionMade,
+    DomainEvent, ExecutionCreated, ExecutionStarted, ObservationRecorded,
+    FindingCreated, AssessmentCompleted, RiskEvaluated, DecisionMade,
     ExplanationGenerated, ExecutionArchived
 )
 from .exceptions import InvalidStateError, InvalidTransitionError, InvalidActionError
@@ -100,31 +100,54 @@ class Execution:
     # --- Lifecycle Methods ---
 
     def submit(self) -> None:
-        """Submit execution for processing."""
+        """Submit execution for processing (CREATED -> PENDING)."""
         self._transition_to(ExecutionStatus.PENDING)
 
-    def start_processing(self) -> None:
-        """Start processing execution."""
+    def start(self) -> None:
+        """Start execution (PENDING -> RUNNING)."""
         self._transition_to(ExecutionStatus.RUNNING)
+        self._add_event(ExecutionStarted(execution_id=self.execution_id))
 
     def complete_processing(self) -> None:
-        """Complete processing execution."""
+        """Complete processing execution (RUNNING -> COMPLETED)."""
         self._transition_to(ExecutionStatus.COMPLETED)
 
     def fail_processing(self, reason: str) -> None:
-        """Fail processing execution."""
+        """Fail processing execution (RUNNING -> FAILED)."""
         self._transition_to(ExecutionStatus.FAILED)
 
-    def complete_assessment(self, risk_score: RiskScore) -> None:
-        """Complete risk assessment."""
+    def record_observation(self, observation: Observation) -> None:
+        """Add observation to execution."""
+        if self.status != ExecutionStatus.RUNNING:
+            raise InvalidStateError(f"Cannot add observation in state {self.status.value}")
+        self.observations.append(observation)
+        self.updated_at = datetime.utcnow()
+        self._add_event(ObservationRecorded(
+            execution_id=self.execution_id,
+            observation=observation
+        ))
+
+    def record_finding(self, finding: Finding) -> None:
+        """Add finding from a detector."""
+        if self.status != ExecutionStatus.RUNNING:
+            raise InvalidStateError(f"Cannot add finding in state {self.status.value}")
+        self.findings.append(finding)
+        self.updated_at = datetime.utcnow()
+        self._add_event(FindingCreated(
+            execution_id=self.execution_id,
+            finding=finding
+        ))
+
+    def evaluate_risk(self, risk_score: RiskScore) -> None:
+        """Evaluate risk for the execution."""
         if self.status != ExecutionStatus.COMPLETED:
-            raise InvalidStateError(f"Cannot assess risk in state {self.status.value}")
+            raise InvalidStateError(f"Cannot evaluate risk in state {self.status.value}")
         self.risk_score = risk_score
         self._transition_to(ExecutionStatus.RISK_EVALUATED)
-        self._add_event(AssessmentCompleted(
+        self._add_event(RiskEvaluated(
             execution_id=self.execution_id,
-            findings=self.findings.copy(),
-            risk_score=risk_score
+            risk_score=risk_score,
+            components=risk_score.components
         ))
 
     def make_decision(self, action: DecisionAction, reason: str, severity: float) -> None:
@@ -152,37 +175,13 @@ class Execution:
         ))
 
     def store(self) -> None:
-        """Store execution."""
+        """Store execution (EXPLAINED -> STORED)."""
         self._transition_to(ExecutionStatus.STORED)
 
     def archive(self) -> None:
-        """Archive execution."""
+        """Archive execution (STORED -> ARCHIVED)."""
         self._transition_to(ExecutionStatus.ARCHIVED)
         self._add_event(ExecutionArchived(execution_id=self.execution_id))
-
-    # --- Observation Methods ---
-
-    def add_observation(self, observation: Observation) -> None:
-        """Add observation to execution."""
-        if self.status not in [ExecutionStatus.PENDING, ExecutionStatus.RUNNING]:
-            raise InvalidStateError(f"Cannot add observation in state {self.status.value}")
-        self.observations.append(observation)
-        self.updated_at = datetime.utcnow()
-        self._add_event(ObservationAdded(
-            execution_id=self.execution_id,
-            observation=observation
-        ))
-
-    def add_finding(self, finding: Finding) -> None:
-        """Add finding from a detector."""
-        if self.status not in [ExecutionStatus.PENDING, ExecutionStatus.RUNNING]:
-            raise InvalidStateError(f"Cannot add finding in state {self.status.value}")
-        self.findings.append(finding)
-        self.updated_at = datetime.utcnow()
-        self._add_event(FindingProduced(
-            execution_id=self.execution_id,
-            finding=finding
-        ))
 
     # --- Private Methods ---
 
