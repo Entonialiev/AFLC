@@ -1,92 +1,38 @@
 """
-AFLC Domain — независимое доменное ядро.
-Не зависит от внешних библиотек.
+AFLC — Agent Foundation & Lifecycle Control Platform
 """
 
-from .exceptions import (
-    DomainError,
-    InvalidActionError,
-    InvalidTransitionError,
-    InvalidStateError,
-    InvalidValueError,
-    AggregateNotFoundError,
-    RuleViolationError,
-    ImmutableError,
-)
+__version__ = "2.0.0-alpha1"
 
-from .enums import (
+# Основные экспорты для пользователей
+from .domain import (
+    Execution,
     ExecutionStatus,
     DecisionAction,
-    Severity,
-    FindingSource,
     EventType,
-)
-
-from .value_objects import (
-    RiskScore,
-    Confidence,
-    SeverityValue,
-    Finding,
-    Observation,
-    Explanation,
-    ExecutionContext,
-    Command,
+    DomainError,
+    InvalidStateError,
+    InvalidTransitionError,
     Action,
+    Command,
+    Observation,
+    Finding,
+    RiskScore,
+    Explanation,
 )
-
-from .events import (
-    DomainEvent,
-    ExecutionCreated,
-    ExecutionStarted,
-    ObservationRecorded,
-    FindingCreated,
-    AssessmentCompleted,
-    RiskEvaluated,
-    DecisionMade,
-    ExplanationGenerated,
-    ExecutionArchived,
-)
-
-from .execution import Execution, ExecutionStateMachine
 
 __all__ = [
-    # Exceptions
-    "DomainError",
-    "InvalidActionError",
-    "InvalidTransitionError",
-    "InvalidStateError",
-    "InvalidValueError",
-    "AggregateNotFoundError",
-    "RuleViolationError",
-    "ImmutableError",
-    # Enums
+    "Execution",
     "ExecutionStatus",
     "DecisionAction",
-    "Severity",
-    "FindingSource",
     "EventType",
-    # Value Objects
-    "RiskScore",
-    "Confidence",
-    "SeverityValue",
-    "Finding",
-    "Observation",
-    "Explanation",
-    "ExecutionContext",
-    "Command",
+    "DomainError",
+    "InvalidStateError",
+    "InvalidTransitionError",
     "Action",
-    # Events
-    "DomainEvent",
-    "ExecutionCreated",
-    "ExecutionStarted",
-    "ObservationRecorded",
-    "FindingCreated",
-    "AssessmentCompleted",
-    "RiskEvaluated",
-    "DecisionMade",
-    "ExplanationGenerated",
-    "ExecutionArchived",
-    # Aggregate
-    "Execution",
-    "ExecutionStateMachine",
+    "Command",
+    "Observation",
+    "Finding",
+    "RiskScore",
+    "Explanation",
 ]
