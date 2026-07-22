@@ -1,7 +1,7 @@
 """
 AFLC - Adaptive Feedback Loop Core
 Industrial-grade framework for AI agent self-correction
-Version: 0.1.0 (Architectural foundation)
+Version: 0.2.0 (with Correlator support)
 """
 
 from dataclasses import dataclass, field
@@ -65,7 +65,7 @@ class RiskScore:
     """Оценка риска"""
     value: float  # 0.0 - 1.0
     confidence: float  # 0.0 - 1.0
-    components: Dict[str, float] = field(default_factory=dict)  # {"endpoint": 0.8, "user": 0.3}
+    components: Dict[str, float] = field(default_factory=dict)
 
 
 # --- ИНТЕРФЕЙСЫ (ПРОТОКОЛЫ) ---
@@ -112,6 +112,7 @@ class AdaptiveFeedbackLoopCore:
     Usage:
         flc = AdaptiveFeedbackLoopCore(agent_id="my-agent")
         flc.register_detector(RuleDetector())
+        flc.register_correlator(Correlator())
         flc.register_policy(DefaultPolicy())
         
         decision = flc.execute(my_action, endpoint="/api/users", method="GET")
@@ -203,18 +204,24 @@ class AdaptiveFeedbackLoopCore:
         # --- 2. Прогоняем через все детекторы ---
         detections = []
         for detector in self.detectors:
-            detection = detector.detect(context)
-            if detection:
-                detections.append(detection)
+            try:
+                detection = detector.detect(context)
+                if detection:
+                    detections.append(detection)
+            except Exception as e:
+                # Логируем ошибку детектора, но не останавливаем пайплайн
+                print(f"⚠️ Detector error: {e}")
+                continue
         
         # --- 3. Коррелируем результаты ---
         final_detection = None
         if self.correlator and detections:
             final_detection = self.correlator.correlate(detections)
         elif detections:
-            final_detection = detections[0]  # Если коррелятора нет, берём первый
+            # Если коррелятора нет, берём детекцию с максимальным score
+            final_detection = max(detections, key=lambda x: x.score)
         
-        # --- 4. Прогнозируем ---
+        # --- 4. Прогнозируем (пока заглушка) ---
         if self.predictor:
             predictions = self.predictor.predict(context)
         else:
@@ -228,6 +235,7 @@ class AdaptiveFeedbackLoopCore:
                 confidence=final_detection.confidence,
                 components={"detection_score": final_detection.score}
             )
+            # Пример: повышаем риск для критичных эндпоинтов
             if context.endpoint.startswith("/admin") or context.endpoint.startswith("/api/admin"):
                 risk.value = min(1.0, risk.value * 1.5)
                 risk.components["endpoint_criticality"] = 0.8
@@ -236,7 +244,7 @@ class AdaptiveFeedbackLoopCore:
         if self.policy:
             decision = self.policy.decide(context, final_detection, risk)
         else:
-            # Дефолтная политика
+            # Дефолтная политика (если не зарегистрирована)
             if final_detection and final_detection.score > 0.3:
                 decision = Decision(
                     action="pause",
@@ -259,9 +267,11 @@ class AdaptiveFeedbackLoopCore:
         # --- 7. Сохраняем в историю ---
         self.history.append({
             "action_id": action_id,
+            "timestamp": time.time(),
             "endpoint": context.endpoint,
             "method": context.method,
             "latency_ms": latency_ms,
+            "error_code": error_code,
             "decision": decision.action,
             "severity": decision.severity,
             "risk_score": decision.risk_score
@@ -269,9 +279,26 @@ class AdaptiveFeedbackLoopCore:
         self.last_decision = decision
         
         return decision
+    
+    def reset(self):
+        """Сбрасывает состояние агента"""
+        self.action_counter = 0
+        self.history = []
+        self.last_decision = None
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Возвращает статистику работы"""
+        return {
+            "agent_id": self.agent_id,
+            "actions": self.action_counter,
+            "detectors": [d.__class__.__name__ for d in self.detectors],
+            "has_correlator": self.correlator is not None,
+            "has_policy": self.policy is not None,
+            "last_decision": self.last_decision.action if self.last_decision else None
+        }
 
 
-# --- ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ---
+# --- ВСТРОЕННЫЕ РЕАЛИЗАЦИИ ИНТЕРФЕЙСОВ ---
 
 class DefaultPolicy(Policy):
     """Простая политика по умолчанию"""
@@ -303,15 +330,13 @@ class SimpleCorrelator(Correlator):
     def correlate(self, detections: List[Detection]) -> Optional[Detection]:
         if not detections:
             return None
-        # Берём детекцию с максимальным score
-        best = max(detections, key=lambda x: x.score)
-        return best
+        return max(detections, key=lambda x: x.score)
 
 
 # --- ПРИМЕР ИСПОЛЬЗОВАНИЯ ---
 
 if __name__ == "__main__":
-    print("🔁 AFLC v0.1.0 — Architectural Foundation")
+    print("🔁 AFLC v0.2.0 — Full Pipeline")
     print("=" * 50)
     
     # Создаём экземпляр
@@ -319,21 +344,38 @@ if __name__ == "__main__":
     
     # Регистрируем компоненты
     flc.register_policy(DefaultPolicy())
+    flc.register_correlator(SimpleCorrelator())
     
     # Определяем действие
-    def my_action():
+    def my_action(delay_ms=100):
         import time
-        time.sleep(0.1)
+        time.sleep(delay_ms / 1000.0)
         return {"status": "ok"}
     
-    # Выполняем
+    # Выполняем несколько действий
+    print("\n📊 Выполнение действий:")
+    for i in range(5):
+        decision = flc.execute(
+            my_action,
+            delay_ms=50 + i * 10,
+            endpoint="/api/test",
+            method="GET"
+        )
+        print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
+    
+    # Аномальное действие
+    print("\n🔴 Аномальное действие:")
     decision = flc.execute(
         my_action,
-        endpoint="/api/v1/users",
+        delay_ms=3000,
+        endpoint="/api/test",
         method="GET"
     )
+    print(f"  Результат: {decision.action}")
+    print(f"  Причина: {decision.reason}")
+    print(f"  Severity: {decision.severity:.2f}")
     
-    print(f"Decision: {decision.action}")
-    print(f"Reason: {decision.reason}")
-    print(f"Severity: {decision.severity:.2f}")
-    print(f"Risk score: {decision.risk_score:.2f}")
+    print("\n📊 Статистика:")
+    stats = flc.get_stats()
+    for key, value in stats.items():
+        print(f"  {key}: {value}")
