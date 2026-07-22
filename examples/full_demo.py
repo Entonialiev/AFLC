@@ -55,13 +55,23 @@ def main():
     print(f"   Execution ID: {execution.execution_id}")
     print(f"   Status: {execution.status.value}")
 
-    # --- 4. Переводим в состояние PENDING и RUNNING через engine ---
-    print("\n🔄 4. Перевод в состояние RUNNING...")
-    engine.start_processing(execution.execution_id)
+    # --- 4. Переводим в состояние PENDING ---
+    print("\n🔄 4. Перевод в состояние PENDING...")
+    engine.repository.save(execution)  # Сохраняем перед изменением
+    execution = engine.get_execution(execution.execution_id)
+    execution.submit()
+    engine.repository.save(execution)
     print(f"   Status: {execution.status.value}")
 
-    # --- 5. Добавляем наблюдения ---
-    print("\n📊 5. Добавление наблюдений...")
+    # --- 5. Переводим в состояние RUNNING ---
+    print("\n🔄 5. Перевод в состояние RUNNING...")
+    execution = engine.get_execution(execution.execution_id)
+    execution.start_processing()
+    engine.repository.save(execution)
+    print(f"   Status: {execution.status.value}")
+
+    # --- 6. Добавляем наблюдения ---
+    print("\n📊 6. Добавление наблюдений...")
     engine.add_observation(
         execution_id=execution.execution_id,
         metric="latency_ms",
@@ -76,8 +86,8 @@ def main():
     )
     print("   ✅ Добавлено наблюдение: response_size=2048b")
 
-    # --- 6. Добавляем находки ---
-    print("\n🔍 6. Добавление находок...")
+    # --- 7. Добавляем находки ---
+    print("\n🔍 7. Добавление находок...")
     engine.add_finding(
         execution_id=execution.execution_id,
         source="rule",
@@ -98,13 +108,15 @@ def main():
     )
     print("   ✅ Находка: Response size anomaly (score=0.8)")
 
-    # --- 7. Завершаем обработку ---
-    print("\n⚙️ 7. Завершение обработки...")
-    engine.complete_processing(execution.execution_id)
+    # --- 8. Завершаем обработку ---
+    print("\n⚙️ 8. Завершение обработки...")
+    execution = engine.get_execution(execution.execution_id)
+    execution.complete_processing()
+    engine.repository.save(execution)
     print(f"   Status: {execution.status.value}")
 
-    # --- 8. Оценка риска ---
-    print("\n📈 8. Оценка риска...")
+    # --- 9. Оценка риска ---
+    print("\n📈 9. Оценка риска...")
     engine.complete_assessment(
         execution_id=execution.execution_id,
         risk_value=0.85,
@@ -117,8 +129,8 @@ def main():
     )
     print("   ✅ Оценка риска: 0.85")
 
-    # --- 9. Принятие решения ---
-    print("\n⚖️ 9. Принятие решения...")
+    # --- 10. Принятие решения ---
+    print("\n⚖️ 10. Принятие решения...")
     engine.make_decision(
         execution_id=execution.execution_id,
         action="block",
@@ -127,8 +139,8 @@ def main():
     )
     print("   ✅ Решение: BLOCK")
 
-    # --- 10. Объяснение ---
-    print("\n📝 10. Генерация объяснения...")
+    # --- 11. Объяснение ---
+    print("\n📝 11. Генерация объяснения...")
     engine.add_explanation(
         execution_id=execution.execution_id,
         text="Action blocked due to high risk score (0.85). "
@@ -143,21 +155,21 @@ def main():
     )
     print("   ✅ Объяснение добавлено")
 
-    # --- 11. Архивация ---
-    print("\n📦 11. Архивация...")
+    # --- 12. Архивация ---
+    print("\n📦 12. Архивация...")
     engine.archive_execution(execution.execution_id)
     print(f"   ✅ Статус: {execution.status.value}")
 
-    # --- 12. Получение Execution из репозитория ---
-    print("\n📋 12. Получение Execution из репозитория...")
+    # --- 13. Получение Execution из репозитория ---
+    print("\n📋 13. Получение Execution из репозитория...")
     saved = engine.get_execution(execution.execution_id)
     print(f"   Execution ID: {saved.execution_id}")
     print(f"   Status: {saved.status.value}")
     print(f"   Risk: {saved.risk_score.value if saved.risk_score else 'None'}")
     print(f"   Decision: {saved.decision['action'].value if saved.decision else 'None'}")
 
-    # --- 13. Статистика ---
-    print("\n📊 13. Статистика...")
+    # --- 14. Статистика ---
+    print("\n📊 14. Статистика...")
     all_executions = engine.get_all_executions()
     print(f"   Всего Execution: {len(all_executions)}")
 
