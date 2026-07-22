@@ -1,6 +1,6 @@
 """
 Plugin Registry для AFLC
-Version: 2.1.4 (fixed deprecation warning)
+Version: 2.1.5 (fixed warning type)
 """
 
 from typing import Dict, Type, Optional, Any, List, Callable, Tuple
@@ -238,16 +238,12 @@ class PluginRegistry:
             return None
         
         if info.metadata.deprecated:
-            logger.warning(
+            msg = (
                 f"Plugin {category}/{name} is deprecated since {info.metadata.deprecated_since}. "
                 f"Use {info.metadata.replaced_by} instead."
             )
-            warnings.warn(
-                f"Plugin {category}/{name} is deprecated since {info.metadata.deprecated_since}. "
-                f"Use {info.metadata.replaced_by} instead.",
-                DeprecationWarning,
-                stacklevel=2
-            )
+            logger.warning(msg)
+            warnings.warn(msg, UserWarning, stacklevel=2)
         
         try:
             sig = inspect.signature(info.plugin_class.__init__)
