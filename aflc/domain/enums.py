@@ -46,9 +46,11 @@ class FindingSource(Enum):
 class EventType(Enum):
     """Domain event types."""
     EXECUTION_CREATED = "execution_created"
-    OBSERVATION_ADDED = "observation_added"
-    FINDING_PRODUCED = "finding_produced"
+    EXECUTION_STARTED = "execution_started"
+    OBSERVATION_RECORDED = "observation_recorded"
+    FINDING_CREATED = "finding_created"
     ASSESSMENT_COMPLETED = "assessment_completed"
+    RISK_EVALUATED = "risk_evaluated"
     DECISION_MADE = "decision_made"
     EXPLANATION_GENERATED = "explanation_generated"
     EXECUTION_ARCHIVED = "execution_archived"
