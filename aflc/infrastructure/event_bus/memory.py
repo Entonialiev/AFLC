@@ -3,11 +3,12 @@ In-memory Event Bus implementation
 """
 
 import asyncio
-from typing import Dict, List, Callable, Any, Optional
+from typing import Dict, List, Callable, Any, Optional, Union
 from dataclasses import dataclass
 import logging
 
 from aflc.domain.events import DomainEvent
+from aflc.domain.enums import EventType
 
 
 logger = logging.getLogger(__name__)
@@ -16,8 +17,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Subscription:
     """Subscription to an event."""
-    event_type: str
-    handler: Callable[[DomainEvent], Any]
+    event_type: Union[str, EventType]
+    handler: Optional[Callable[[DomainEvent], Any]] = None
     async_handler: Optional[Callable[[DomainEvent], Any]] = None
 
 
@@ -30,9 +31,15 @@ class MemoryEventBus:
     def __init__(self):
         self._subscriptions: Dict[str, List[Subscription]] = {}
 
+    def _get_key(self, event_type: Union[str, EventType]) -> str:
+        """Convert event type to string key."""
+        if isinstance(event_type, EventType):
+            return event_type.value
+        return event_type
+
     def subscribe(
         self,
-        event_type: str,
+        event_type: Union[str, EventType],
         handler: Optional[Callable[[DomainEvent], Any]] = None,
         async_handler: Optional[Callable[[DomainEvent], Any]] = None
     ) -> None:
@@ -40,10 +47,11 @@ class MemoryEventBus:
         if not handler and not async_handler:
             raise ValueError("Either handler or async_handler must be provided")
 
-        if event_type not in self._subscriptions:
-            self._subscriptions[event_type] = []
+        key = self._get_key(event_type)
+        if key not in self._subscriptions:
+            self._subscriptions[key] = []
 
-        self._subscriptions[event_type].append(
+        self._subscriptions[key].append(
             Subscription(
                 event_type=event_type,
                 handler=handler,
@@ -51,38 +59,41 @@ class MemoryEventBus:
             )
         )
 
-    def unsubscribe(self, event_type: str, handler: Callable) -> None:
+    def unsubscribe(self, event_type: Union[str, EventType], handler: Callable) -> None:
         """Unsubscribe from an event type."""
-        if event_type in self._subscriptions:
-            self._subscriptions[event_type] = [
-                s for s in self._subscriptions[event_type]
+        key = self._get_key(event_type)
+        if key in self._subscriptions:
+            self._subscriptions[key] = [
+                s for s in self._subscriptions[key]
                 if s.handler != handler and s.async_handler != handler
             ]
 
     def publish(self, event: DomainEvent) -> None:
         """Publish an event synchronously."""
-        if event.event_type.value not in self._subscriptions:
+        key = self._get_key(event.event_type)
+        if key not in self._subscriptions:
             return
 
-        for subscription in self._subscriptions[event.event_type.value]:
+        for subscription in self._subscriptions[key]:
             try:
                 if subscription.handler:
                     subscription.handler(event)
                 elif subscription.async_handler:
                     # If only async handler is available, we can't call it synchronously
                     logger.warning(
-                        f"Async handler for {event.event_type.value} cannot be called synchronously"
+                        f"Async handler for {key} cannot be called synchronously"
                     )
             except Exception as e:
                 logger.error(f"Error in event handler: {e}")
 
     async def publish_async(self, event: DomainEvent) -> None:
         """Publish an event asynchronously."""
-        if event.event_type.value not in self._subscriptions:
+        key = self._get_key(event.event_type)
+        if key not in self._subscriptions:
             return
 
         tasks = []
-        for subscription in self._subscriptions[event.event_type.value]:
+        for subscription in self._subscriptions[key]:
             if subscription.async_handler:
                 tasks.append(subscription.async_handler(event))
             elif subscription.handler:
