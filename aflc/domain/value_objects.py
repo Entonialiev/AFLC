@@ -10,7 +10,7 @@ from .exceptions import InvalidValueError
 from .enums import Severity
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RiskScore:
     """Immutable risk score."""
     value: float
@@ -24,7 +24,7 @@ class RiskScore:
             raise InvalidValueError(f"RiskScore.confidence must be between 0 and 1, got {self.confidence}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Confidence:
     """Immutable confidence value."""
     value: float
@@ -35,7 +35,7 @@ class Confidence:
             raise InvalidValueError(f"Confidence.value must be between 0 and 1, got {self.value}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SeverityValue:
     """Immutable severity."""
     value: float
@@ -46,7 +46,7 @@ class SeverityValue:
             raise InvalidValueError(f"Severity.value must be between 0 and 1, got {self.value}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Finding:
     """Immutable finding from a detector."""
     source: str
@@ -62,7 +62,7 @@ class Finding:
             raise InvalidValueError(f"Finding.confidence must be between 0 and 1, got {self.confidence}")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Observation:
     """Immutable observation from an action."""
     observation_id: str
@@ -71,14 +71,14 @@ class Observation:
     timestamp: datetime
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Explanation:
     """Immutable explanation for a decision."""
     text: str
     details: Dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ExecutionContext:
     """Immutable technical context of an execution."""
     trace_id: str
@@ -92,7 +92,7 @@ class ExecutionContext:
     client_ip: Optional[str]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Command:
     """Immutable command."""
     command_id: str
@@ -102,7 +102,7 @@ class Command:
     idempotency_key: Optional[str] = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Action:
     """Immutable action."""
     action_id: str
