@@ -38,8 +38,8 @@ def main():
     def on_decision_made(event):
         print(f"   📨 Событие: DecisionMade (action={event.action.value})")
 
-    event_bus.subscribe("execution_created", handler=on_execution_created)
-    event_bus.subscribe("decision_made", handler=on_decision_made)
+    event_bus.subscribe(DecisionAction.EXECUTION_CREATED, handler=on_execution_created)
+    event_bus.subscribe(DecisionAction.DECISION_MADE, handler=on_decision_made)
 
     print("✅ Подписки созданы")
 
@@ -55,11 +55,14 @@ def main():
     print(f"   Execution ID: {execution.execution_id}")
     print(f"   Status: {execution.status.value}")
 
-    # --- 4. Добавляем наблюдения ---
-    print("\n📊 4. Добавление наблюдений...")
+    # --- 4. Переводим в состояние PENDING и RUNNING ---
+    print("\n🔄 4. Перевод в состояние RUNNING...")
     execution.submit()
     execution.start_processing()
+    print(f"   Status: {execution.status.value}")
 
+    # --- 5. Добавляем наблюдения ---
+    print("\n📊 5. Добавление наблюдений...")
     engine.add_observation(
         execution_id=execution.execution_id,
         metric="latency_ms",
@@ -74,8 +77,8 @@ def main():
     )
     print("   ✅ Добавлено наблюдение: response_size=2048b")
 
-    # --- 5. Добавляем находки ---
-    print("\n🔍 5. Добавление находок...")
+    # --- 6. Добавляем находки ---
+    print("\n🔍 6. Добавление находок...")
     engine.add_finding(
         execution_id=execution.execution_id,
         source="rule",
@@ -96,13 +99,13 @@ def main():
     )
     print("   ✅ Находка: Response size anomaly (score=0.8)")
 
-    # --- 6. Завершаем обработку ---
-    print("\n⚙️ 6. Завершение обработки...")
+    # --- 7. Завершаем обработку ---
+    print("\n⚙️ 7. Завершение обработки...")
     execution.complete_processing()
     print(f"   Status: {execution.status.value}")
 
-    # --- 7. Оценка риска ---
-    print("\n📈 7. Оценка риска...")
+    # --- 8. Оценка риска ---
+    print("\n📈 8. Оценка риска...")
     engine.complete_assessment(
         execution_id=execution.execution_id,
         risk_value=0.85,
@@ -115,8 +118,8 @@ def main():
     )
     print("   ✅ Оценка риска: 0.85")
 
-    # --- 8. Принятие решения ---
-    print("\n⚖️ 8. Принятие решения...")
+    # --- 9. Принятие решения ---
+    print("\n⚖️ 9. Принятие решения...")
     engine.make_decision(
         execution_id=execution.execution_id,
         action="block",
@@ -125,8 +128,8 @@ def main():
     )
     print("   ✅ Решение: BLOCK")
 
-    # --- 9. Объяснение ---
-    print("\n📝 9. Генерация объяснения...")
+    # --- 10. Объяснение ---
+    print("\n📝 10. Генерация объяснения...")
     engine.add_explanation(
         execution_id=execution.execution_id,
         text="Action blocked due to high risk score (0.85). "
@@ -141,21 +144,21 @@ def main():
     )
     print("   ✅ Объяснение добавлено")
 
-    # --- 10. Архивация ---
-    print("\n📦 10. Архивация...")
+    # --- 11. Архивация ---
+    print("\n📦 11. Архивация...")
     engine.archive_execution(execution.execution_id)
     print(f"   ✅ Статус: {execution.status.value}")
 
-    # --- 11. Получение Execution ---
-    print("\n📋 11. Получение Execution из репозитория...")
+    # --- 12. Получение Execution из репозитория ---
+    print("\n📋 12. Получение Execution из репозитория...")
     saved = engine.get_execution(execution.execution_id)
     print(f"   Execution ID: {saved.execution_id}")
     print(f"   Status: {saved.status.value}")
     print(f"   Risk: {saved.risk_score.value if saved.risk_score else 'None'}")
     print(f"   Decision: {saved.decision['action'].value if saved.decision else 'None'}")
 
-    # --- 12. Статистика ---
-    print("\n📊 12. Статистика...")
+    # --- 13. Статистика ---
+    print("\n📊 13. Статистика...")
     all_executions = engine.get_all_executions()
     print(f"   Всего Execution: {len(all_executions)}")
 
