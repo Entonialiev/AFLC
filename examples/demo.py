@@ -1,5 +1,5 @@
 """
-AFLC Demo — Full Pipeline with Risk Engine
+AFLC Demo — Full Pipeline with Risk Engine and Explainer
 """
 
 import sys
@@ -11,10 +11,11 @@ from core import AdaptiveFeedbackLoopCore, DefaultPolicy
 from detectors import RuleDetector, StatisticalDetector
 from correlator import Correlator
 from risk import RiskEngine
+from explainer import Explainer
 
 
 def main():
-    print("🔁 AFLC Demo — Full Pipeline with Risk Engine")
+    print("🔁 AFLC Demo — Full Pipeline with Explainer")
     print("-" * 60)
     
     flc = (
@@ -24,6 +25,7 @@ def main():
         .register_correlator(Correlator(config={"strategy": "weighted"}))
         .register_risk_engine(RiskEngine())
         .register_policy(DefaultPolicy())
+        .register_explainer(Explainer())
     )
     
     def my_action(delay=0.05, size=1024):
@@ -31,34 +33,26 @@ def main():
         return {"status": "ok", "data": "x" * size}
     
     # Фаза обучения
-    print("\n📚 Фаза обучения (30 запросов)...")
+    print("📚 Фаза обучения (30 запросов)...")
     for i in range(30):
         delay = random.uniform(0.04, 0.08)
         flc.execute(my_action, delay, size=1024, endpoint="/api/users", method="GET")
     
     print("✅ Обучение завершено\n")
     
-    # Сценарии
-    scenarios = [
-        ("/api/public", "GET", "guest", 0.05, "🟢 Низкий риск"),
-        ("/api/users", "POST", "user", 0.3, "🟡 Средний риск"),
-        ("/api/admin/delete", "DELETE", "admin", 0.3, "🔴 Высокий риск"),
-        ("/api/admin/delete", "DELETE", "admin", 3.0, "🔴 Критический риск")
-    ]
+    # Аномальный запрос
+    print("🔴 Критическая аномалия:")
+    print("-" * 40)
     
-    for endpoint, method, user, delay, risk_label in scenarios:
-        decision = flc.execute(
-            my_action, delay, size=1024,
-            endpoint=endpoint,
-            method=method,
-            user_id=user
-        )
-        print(f"{risk_label}: {endpoint} [{method}] user={user}")
-        print(f"  → {decision.action} (severity: {decision.severity:.2f}, risk: {decision.risk_score:.2f})")
-        print(f"  Причина: {decision.reason}")
-        print()
+    decision = flc.execute(
+        my_action, 3.0, size=1024,
+        endpoint="/api/admin/delete",
+        method="DELETE",
+        user_id="admin"
+    )
     
-    print(f"📊 Статистика: {flc.get_stats()}")
+    print(decision.explanation)
+    print(f"\n📊 Кратко: {flc.explainer.short_explain(decision)}")
 
 
 if __name__ == "__main__":
