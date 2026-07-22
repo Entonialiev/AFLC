@@ -53,7 +53,6 @@ def test_value_objects_are_frozen():
         cls = getattr(vo, name, None)
         if cls:
             # Проверяем, что класс является dataclass с frozen=True
-            # В Python 3.9 это можно проверить через __dataclass_fields__
             assert hasattr(cls, "__dataclass_fields__"), f"{name} is not a dataclass"
             # Проверяем, что frozen=True через параметры dataclass
             # В Python 3.9 нет прямого способа, проверяем, что объект неизменяем
@@ -66,10 +65,34 @@ def test_execution_is_aggregate_root():
     """Execution must be the only Aggregate Root in domain."""
     from aflc.domain.execution import Execution
 
-    # Check that Execution has aggregate characteristics
-    assert hasattr(Execution, "execution_id")
-    assert hasattr(Execution, "get_events")
-    assert hasattr(Execution, "is_terminal")
+    # Проверяем, что Execution является Aggregate Root
+    # Создаём экземпляр для проверки атрибутов
+    from aflc.domain.value_objects import Action, Command
+    from datetime import datetime
+    
+    action = Action(
+        action_id="test",
+        agent_id="test",
+        endpoint="/test",
+        method="GET",
+        payload={},
+        timestamp=datetime.utcnow()
+    )
+    command = Command(
+        command_id="test",
+        type="test",
+        payload={},
+        timestamp=datetime.utcnow()
+    )
+    
+    execution = Execution(action, command)
+    
+    # Проверяем, что у экземпляра есть необходимые атрибуты
+    assert hasattr(execution, "execution_id")
+    assert hasattr(execution, "get_events")
+    assert hasattr(execution, "is_terminal")
+    assert hasattr(execution, "submit")
+    assert hasattr(execution, "archive")
 
 
 def test_domain_exceptions_inherit_domain_error():
