@@ -7,7 +7,7 @@ from typing import List, Optional, Any
 from datetime import datetime
 from uuid import uuid4
 
-from .value_objects import Finding, Observation, Explanation, Action
+from .value_objects import Finding, Observation, Explanation, Action, RiskScore
 from .enums import DecisionAction, EventType
 
 
@@ -35,30 +35,38 @@ class ExecutionCreated(DomainEvent):
 
 
 @dataclass(frozen=True)
-class ObservationAdded(DomainEvent):
-    """Observation has been added to execution."""
+class ExecutionStarted(DomainEvent):
+    """Execution has been started (transitioned to RUNNING)."""
+
+    def __post_init__(self):
+        object.__setattr__(self, "event_type", EventType.EXECUTION_STARTED)
+
+
+@dataclass(frozen=True)
+class ObservationRecorded(DomainEvent):
+    """Observation has been recorded."""
     observation: Observation = field(default_factory=lambda: None)
 
     def __post_init__(self):
         if self.observation is None:
             raise ValueError("observation is required")
-        object.__setattr__(self, "event_type", EventType.OBSERVATION_ADDED)
+        object.__setattr__(self, "event_type", EventType.OBSERVATION_RECORDED)
 
 
 @dataclass(frozen=True)
-class FindingProduced(DomainEvent):
-    """Finding has been produced."""
+class FindingCreated(DomainEvent):
+    """Finding has been created."""
     finding: Finding = field(default_factory=lambda: None)
 
     def __post_init__(self):
         if self.finding is None:
             raise ValueError("finding is required")
-        object.__setattr__(self, "event_type", EventType.FINDING_PRODUCED)
+        object.__setattr__(self, "event_type", EventType.FINDING_CREATED)
 
 
 @dataclass(frozen=True)
 class AssessmentCompleted(DomainEvent):
-    """Assessment has been completed."""
+    """Assessment has been completed (DEPRECATED - use RiskEvaluated)."""
     findings: List[Finding] = field(default_factory=list)
     risk_score: Any = field(default_factory=lambda: None)
 
@@ -66,6 +74,18 @@ class AssessmentCompleted(DomainEvent):
         if self.risk_score is None:
             raise ValueError("risk_score is required")
         object.__setattr__(self, "event_type", EventType.ASSESSMENT_COMPLETED)
+
+
+@dataclass(frozen=True)
+class RiskEvaluated(DomainEvent):
+    """Risk has been evaluated."""
+    risk_score: RiskScore = field(default_factory=lambda: None)
+    components: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.risk_score is None:
+            raise ValueError("risk_score is required")
+        object.__setattr__(self, "event_type", EventType.RISK_EVALUATED)
 
 
 @dataclass(frozen=True)
