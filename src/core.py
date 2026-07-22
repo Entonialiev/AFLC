@@ -1,10 +1,12 @@
 """
 AFLC - Adaptive Feedback Loop Core
-Version: 0.6.0
+Version: 0.7.0
 - Unified Pipeline (sync/async)
 - Event Bus for loose coupling
 - Plugin Registry integration
-- Logging system
+- History Backend support
+- Exception hierarchy
+- No duplication between execute() and async_execute()
 """
 
 from dataclasses import dataclass, field
@@ -15,8 +17,8 @@ import logging
 
 from .events import EventBus, Event
 from .registry import registry
+from .exceptions import AFLCError, PipelineError, ConfigurationError
 
-# Настройка логирования
 logger = logging.getLogger("aflc")
 
 
@@ -24,7 +26,6 @@ logger = logging.getLogger("aflc")
 
 @dataclass
 class ActionContext:
-    """Полный контекст выполнения действия"""
     action_id: str
     endpoint: str
     method: str
@@ -48,7 +49,6 @@ class ActionContext:
 
 @dataclass
 class Detection:
-    """Результат работы одного детектора"""
     source: str
     score: float
     confidence: float
@@ -59,7 +59,6 @@ class Detection:
 
 @dataclass
 class Decision:
-    """Решение, принятое Policy Engine"""
     action: str
     reason: str
     severity: float
@@ -71,7 +70,6 @@ class Decision:
 
 @dataclass
 class RiskScore:
-    """Оценка риска"""
     value: float
     confidence: float
     components: Dict[str, float] = field(default_factory=dict)
@@ -80,13 +78,11 @@ class RiskScore:
 # --- ИНТЕРФЕЙСЫ ---
 
 class Detector:
-    """Синхронный детектор"""
     def detect(self, context: ActionContext) -> Optional[Detection]:
         raise NotImplementedError
 
 
 class AsyncDetector:
-    """Асинхронный детектор"""
     async def detect(self, context: ActionContext) -> Optional[Detection]:
         raise NotImplementedError
 
@@ -102,14 +98,12 @@ class Predictor:
 
 
 class Policy:
-    """Синхронная политика"""
     def decide(self, context: ActionContext, detection: Optional[Detection], 
                risk: RiskScore) -> Decision:
         raise NotImplementedError
 
 
 class AsyncPolicy:
-    """Асинхронная политика"""
     async def decide(self, context: ActionContext, detection: Optional[Detection], 
                      risk: RiskScore) -> Decision:
         raise NotImplementedError
@@ -130,25 +124,6 @@ class Memory:
 # --- ГЛАВНЫЙ ОРКЕСТРАТОР ---
 
 class AdaptiveFeedbackLoopCore:
-    """
-    Главный класс AFLC. Оркестрирует все компоненты.
-    
-    Usage:
-        flc = AdaptiveFeedbackLoopCore(agent_id="my-agent")
-        flc.register_detector(RuleDetector())
-        flc.register_correlator(Correlator())
-        flc.register_risk_engine(RiskEngine())
-        flc.register_policy(DefaultPolicy())
-        flc.register_explainer(Explainer())
-        flc.register_memory(Memory())
-        
-        # Синхронный вызов
-        decision = flc.execute(my_action, endpoint="/api/users", method="GET")
-        
-        # Асинхронный вызов
-        decision = await flc.async_execute(my_action, endpoint="/api/users", method="GET")
-    """
-    
     def __init__(self, agent_id: str, config: Optional[Dict] = None):
         self.agent_id = agent_id
         self.config = config or {}
@@ -161,16 +136,14 @@ class AdaptiveFeedbackLoopCore:
         self.policy: Optional[Union[Policy, AsyncPolicy]] = None
         self.explainer: Optional[Explainer] = None
         self.memory: Optional[Memory] = None
+        self.history_backend: Optional['HistoryBackend'] = None
         
         self.action_counter = 0
-        self.history: List[Dict] = []
         self.last_decision: Optional[Decision] = None
         
-        # Подписываемся на события по умолчанию
         self._setup_default_event_handlers()
     
     def _setup_default_event_handlers(self):
-        """Настраивает стандартные обработчики событий"""
         @self.event_bus.subscribe("action_started")
         def on_action_started(event: Event):
             logger.debug(f"Action started: {event.data.get('action_id')}")
@@ -185,23 +158,22 @@ class AdaptiveFeedbackLoopCore:
     
     @classmethod
     def from_config(cls, config_path: str) -> 'AdaptiveFeedbackLoopCore':
-        """Создаёт экземпляр AFLC из YAML-конфигурации."""
         import yaml
-        with open(config_path, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
-        return cls.from_config_dict(data)
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            return cls.from_config_dict(data)
+        except Exception as e:
+            raise ConfigurationError(f"Failed to load config from {config_path}: {e}") from e
     
     @classmethod
     def from_config_dict(cls, data: Dict[str, Any]) -> 'AdaptiveFeedbackLoopCore':
-        """Создаёт экземпляр AFLC из словаря конфигурации через Plugin Registry."""
         agent_id = data.get("agent_id", "default-agent")
         flc = cls(agent_id=agent_id, config=data)
         
-        # Регистрируем детекторы из конфига через реестр
         for name, detector_config in data.get("detectors", {}).items():
             if not detector_config.get("enabled", True):
                 continue
-            
             detector = registry.create_detector(name, detector_config.get("params", {}))
             if detector:
                 flc.register_detector(detector)
@@ -209,28 +181,33 @@ class AdaptiveFeedbackLoopCore:
             else:
                 logger.warning(f"Detector not found in registry: {name}")
         
-        # Коррелятор
         correlator_name = data.get("correlator", {}).get("type", "weighted")
         correlator = registry.create_correlator(correlator_name, data.get("correlator", {}))
         if correlator:
             flc.register_correlator(correlator)
         
-        # Risk Engine
         risk_engine = registry.create_risk_engine(data.get("risk", {}))
         if risk_engine:
             flc.register_risk_engine(risk_engine)
         
-        # Policy
         policy_name = data.get("policy", {}).get("type", "default")
         policy = registry.create_policy(policy_name, data.get("policy", {}))
         if policy:
             flc.register_policy(policy)
         
-        # Memory
         memory_config = data.get("memory", {})
         memory = registry.create_memory(memory_config.get("type", "default"), memory_config)
         if memory:
             flc.register_memory(memory)
+        
+        # History Backend
+        history_config = data.get("history", {})
+        if history_config.get("type") == "sqlite":
+            from .history import SQLiteHistory
+            flc.register_history_backend(SQLiteHistory(**history_config.get("params", {})))
+        else:
+            from .history import MemoryHistory
+            flc.register_history_backend(MemoryHistory(**history_config.get("params", {})))
         
         return flc
     
@@ -262,19 +239,19 @@ class AdaptiveFeedbackLoopCore:
         self.memory = memory
         return self
     
+    def register_history_backend(self, backend: 'HistoryBackend') -> 'AdaptiveFeedbackLoopCore':
+        self.history_backend = backend
+        return self
+    
     def _build_pipeline(self):
-        """Строит пайплайн с текущими компонентами"""
         from .pipeline import Pipeline
         return Pipeline(self)
     
-    def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
-        """
-        Синхронное выполнение действия.
-        """
+    def _prepare_action(self, action_func: Callable, *args, **kwargs):
+        """Общая подготовка контекста (без дублирования)"""
         self.action_counter += 1
         action_id = f"{self.agent_id}-{self.action_counter:04d}"
         
-        # Выполняем действие
         start_time = time.time()
         try:
             result = action_func(*args, **kwargs)
@@ -288,7 +265,7 @@ class AdaptiveFeedbackLoopCore:
         latency_ms = (time.time() - start_time) * 1000
         response_size = len(response_body) if response_body else 0
         
-        context = ActionContext(
+        return ActionContext(
             action_id=action_id,
             endpoint=kwargs.get("endpoint", "default"),
             method=kwargs.get("method", "GET"),
@@ -298,103 +275,51 @@ class AdaptiveFeedbackLoopCore:
             response_size=response_size,
             response=result,
             user_id=kwargs.get("user_id", None),
-            session_id=kwargs.get("session_id", None),
-            history=self.history
+            session_id=kwargs.get("session_id", None)
         )
-        
-        # Запускаем пайплайн
-        pipeline = self._build_pipeline()
-        result_context = pipeline.execute(context)
-        
+    
+    def _finalize(self, result_context: ActionContext) -> Decision:
+        """Общая финализация (без дублирования)"""
         decision = getattr(result_context, '_decision', None)
         if decision is None:
-            raise RuntimeError("Pipeline did not produce a decision")
+            raise PipelineError("Pipeline did not produce a decision")
+        
+        self.last_decision = decision
         
         # Сохраняем в историю
-        self.history.append({
-            "action_id": action_id,
-            "timestamp": time.time(),
-            "endpoint": context.endpoint,
-            "method": context.method,
-            "latency_ms": latency_ms,
-            "error_code": error_code,
-            "decision": decision.action,
-            "severity": decision.severity,
-            "risk_score": decision.risk_score
-        })
-        self.last_decision = decision
+        if self.history_backend:
+            self.history_backend.add({
+                "action_id": result_context.action_id,
+                "timestamp": result_context.timestamp,
+                "endpoint": result_context.endpoint,
+                "method": result_context.method,
+                "latency_ms": result_context.latency_ms,
+                "error_code": result_context.error_code,
+                "decision": decision.action,
+                "severity": decision.severity,
+                "risk_score": decision.risk_score
+            })
         
         return decision
     
+    def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
+        context = self._prepare_action(action_func, *args, **kwargs)
+        result_context = self._build_pipeline().execute(context)
+        return self._finalize(result_context)
+    
     async def async_execute(self, action_func: Callable, *args, **kwargs) -> Decision:
-        """
-        Асинхронное выполнение действия.
-        """
-        self.action_counter += 1
-        action_id = f"{self.agent_id}-{self.action_counter:04d}"
-        
-        # Выполняем действие
-        start_time = time.time()
-        try:
-            if asyncio.iscoroutinefunction(action_func):
-                result = await action_func(*args, **kwargs)
-            else:
-                result = action_func(*args, **kwargs)
-            error_code = 0
-            response_body = str(result) if result else ""
-        except Exception as e:
-            result = {"error": str(e)}
-            error_code = 500
-            response_body = str(e)
-        
-        latency_ms = (time.time() - start_time) * 1000
-        response_size = len(response_body) if response_body else 0
-        
-        context = ActionContext(
-            action_id=action_id,
-            endpoint=kwargs.get("endpoint", "default"),
-            method=kwargs.get("method", "GET"),
-            payload=kwargs.get("payload", {}),
-            latency_ms=latency_ms,
-            error_code=error_code,
-            response_size=response_size,
-            response=result,
-            user_id=kwargs.get("user_id", None),
-            session_id=kwargs.get("session_id", None),
-            history=self.history
-        )
-        
-        # Запускаем пайплайн асинхронно
-        pipeline = self._build_pipeline()
-        result_context = await pipeline.execute_async(context)
-        
-        decision = getattr(result_context, '_decision', None)
-        if decision is None:
-            raise RuntimeError("Pipeline did not produce a decision")
-        
-        # Сохраняем в историю
-        self.history.append({
-            "action_id": action_id,
-            "timestamp": time.time(),
-            "endpoint": context.endpoint,
-            "method": context.method,
-            "latency_ms": latency_ms,
-            "error_code": error_code,
-            "decision": decision.action,
-            "severity": decision.severity,
-            "risk_score": decision.risk_score
-        })
-        self.last_decision = decision
-        
-        return decision
+        context = self._prepare_action(action_func, *args, **kwargs)
+        result_context = await self._build_pipeline().execute_async(context)
+        return self._finalize(result_context)
     
     def reset(self):
         self.action_counter = 0
-        self.history = []
         self.last_decision = None
+        if self.history_backend:
+            self.history_backend.clear()
     
     def get_stats(self) -> Dict[str, Any]:
-        return {
+        stats = {
             "agent_id": self.agent_id,
             "actions": self.action_counter,
             "detectors": [d.__class__.__name__ for d in self.detectors],
@@ -403,8 +328,12 @@ class AdaptiveFeedbackLoopCore:
             "has_policy": self.policy is not None,
             "has_explainer": self.explainer is not None,
             "has_memory": self.memory is not None,
+            "has_history_backend": self.history_backend is not None,
             "last_decision": self.last_decision.action if self.last_decision else None
         }
+        if self.history_backend:
+            stats["history"] = self.history_backend.get_stats()
+        return stats
 
 
 # --- ВСТРОЕННЫЕ РЕАЛИЗАЦИИ ---
@@ -441,39 +370,24 @@ class SimpleCorrelator(Correlator):
 # --- ПРИМЕР ---
 
 if __name__ == "__main__":
-    print("🔁 AFLC v0.6.0 — Full Pipeline with Async")
+    print("🔁 AFLC v0.7.0 — No Duplication, History Backend")
     print("=" * 50)
     
     flc = AdaptiveFeedbackLoopCore(agent_id="demo-agent")
     flc.register_policy(DefaultPolicy())
     flc.register_correlator(SimpleCorrelator())
     
+    from .history import MemoryHistory
+    flc.register_history_backend(MemoryHistory(max_size=100))
+    
     def my_action(delay_ms=100):
         import time
         time.sleep(delay_ms / 1000.0)
         return {"status": "ok"}
     
-    # Синхронный вызов
-    print("\n🔄 Синхронный вызов:")
+    print("\n🔄 Выполнение действий:")
     for i in range(3):
-        decision = flc.execute(
-            my_action, 50 + i * 10,
-            endpoint="/api/test",
-            method="GET"
-        )
+        decision = flc.execute(my_action, 50 + i * 10, endpoint="/api/test", method="GET")
         print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
-    
-    # Асинхронный вызов
-    print("\n⚡ Асинхронный вызов:")
-    async def run_async():
-        for i in range(3):
-            decision = await flc.async_execute(
-                my_action, 50 + i * 10,
-                endpoint="/api/test",
-                method="GET"
-            )
-            print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
-    
-    asyncio.run(run_async())
     
     print(f"\n📊 Статистика: {flc.get_stats()}")
