@@ -1,9 +1,9 @@
 """
 AFLC - Adaptive Feedback Loop Core
 Version: 0.6.0
-- Async pipeline support
-- Plugin Registry integration
+- Unified Pipeline (sync/async)
 - Event Bus for loose coupling
+- Plugin Registry integration
 - Logging system
 """
 
@@ -262,12 +262,19 @@ class AdaptiveFeedbackLoopCore:
         self.memory = memory
         return self
     
-    def _execute_action(self, action_func: Callable, *args, **kwargs) -> tuple:
-        """Выполняет действие и возвращает (context, detections, decision)"""
+    def _build_pipeline(self):
+        """Строит пайплайн с текущими компонентами"""
+        from .pipeline import Pipeline
+        return Pipeline(self)
+    
+    def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
+        """
+        Синхронное выполнение действия.
+        """
         self.action_counter += 1
         action_id = f"{self.agent_id}-{self.action_counter:04d}"
         
-        # --- 1. Выполняем действие ---
+        # Выполняем действие
         start_time = time.time()
         try:
             result = action_func(*args, **kwargs)
@@ -295,82 +302,15 @@ class AdaptiveFeedbackLoopCore:
             history=self.history
         )
         
-        self.event_bus.publish(Event("action_started", {"action_id": action_id, "context": context}))
+        # Запускаем пайплайн
+        pipeline = self._build_pipeline()
+        result_context = pipeline.execute(context)
         
-        # --- 2. Детекторы ---
-        detections = []
-        for detector in self.detectors:
-            try:
-                detection = detector.detect(context)
-                if detection:
-                    detections.append(detection)
-            except Exception as e:
-                logger.error(f"Detector error: {e}")
-                continue
+        decision = getattr(result_context, '_decision', None)
+        if decision is None:
+            raise RuntimeError("Pipeline did not produce a decision")
         
-        if detections:
-            self.event_bus.publish(Event("detections_created", {"detections": detections}))
-        
-        # --- 3. Коррелятор ---
-        final_detection = None
-        if self.correlator and detections:
-            final_detection = self.correlator.correlate(detections)
-        elif detections:
-            final_detection = max(detections, key=lambda x: x.score)
-        
-        # --- 4. Прогнозирование ---
-        if self.predictor:
-            predictions = self.predictor.predict(context)
-        else:
-            predictions = {}
-        
-        # --- 5. Risk Engine ---
-        if self.risk_engine and final_detection:
-            risk = self.risk_engine.evaluate(context, final_detection)
-        else:
-            risk = RiskScore(value=0.0, confidence=0.0)
-            if final_detection:
-                risk = RiskScore(
-                    value=final_detection.score,
-                    confidence=final_detection.confidence,
-                    components={"detection_score": final_detection.score}
-                )
-        
-        # --- 6. Policy ---
-        if self.policy:
-            decision = self.policy.decide(context, final_detection, risk)
-        else:
-            if final_detection and final_detection.score > 0.3:
-                decision = Decision(
-                    action="pause",
-                    reason=final_detection.reason,
-                    severity=final_detection.score,
-                    confidence=final_detection.confidence,
-                    risk_score=risk.value,
-                    explanation=f"Anomaly detected by {final_detection.source}"
-                )
-            else:
-                decision = Decision(
-                    action="continue",
-                    reason="No anomalies detected",
-                    severity=0.0,
-                    confidence=1.0,
-                    risk_score=0.0,
-                    explanation="All systems nominal"
-                )
-        
-        self.event_bus.publish(Event("decision_made", {"decision": decision}))
-        
-        # --- 7. Memory ---
-        if self.memory:
-            self.memory.store(context, final_detection, decision, risk)
-        
-        # --- 8. Explainer ---
-        if self.explainer:
-            explanation = self.explainer.explain(context, final_detection, decision, risk)
-            decision.explanation = explanation
-        
-        # --- 9. История ---
+        # Сохраняем в историю
         self.history.append({
             "action_id": action_id,
             "timestamp": time.time(),
@@ -384,24 +324,18 @@ class AdaptiveFeedbackLoopCore:
         })
         self.last_decision = decision
         
-        return context, detections, decision
-    
-    def execute(self, action_func: Callable, *args, **kwargs) -> Decision:
-        """Синхронное выполнение действия."""
-        _, _, decision = self._execute_action(action_func, *args, **kwargs)
         return decision
     
     async def async_execute(self, action_func: Callable, *args, **kwargs) -> Decision:
         """
-        Асинхронное выполнение действия с поддержкой асинхронных компонентов.
+        Асинхронное выполнение действия.
         """
         self.action_counter += 1
         action_id = f"{self.agent_id}-{self.action_counter:04d}"
         
-        # --- 1. Выполняем действие ---
+        # Выполняем действие
         start_time = time.time()
         try:
-            # Если action_func асинхронная
             if asyncio.iscoroutinefunction(action_func):
                 result = await action_func(*args, **kwargs)
             else:
@@ -430,91 +364,15 @@ class AdaptiveFeedbackLoopCore:
             history=self.history
         )
         
-        await self.event_bus.publish_async(Event("action_started", {"action_id": action_id, "context": context}))
+        # Запускаем пайплайн асинхронно
+        pipeline = self._build_pipeline()
+        result_context = await pipeline.execute_async(context)
         
-        # --- 2. Детекторы (поддерживаем и синхронные, и асинхронные) ---
-        detections = []
-        for detector in self.detectors:
-            try:
-                if hasattr(detector, 'detect') and asyncio.iscoroutinefunction(detector.detect):
-                    detection = await detector.detect(context)
-                else:
-                    detection = detector.detect(context)
-                if detection:
-                    detections.append(detection)
-            except Exception as e:
-                logger.error(f"Detector error: {e}")
-                continue
+        decision = getattr(result_context, '_decision', None)
+        if decision is None:
+            raise RuntimeError("Pipeline did not produce a decision")
         
-        if detections:
-            await self.event_bus.publish_async(Event("detections_created", {"detections": detections}))
-        
-        # --- 3. Коррелятор ---
-        final_detection = None
-        if self.correlator and detections:
-            final_detection = self.correlator.correlate(detections)
-        elif detections:
-            final_detection = max(detections, key=lambda x: x.score)
-        
-        # --- 4. Прогнозирование ---
-        if self.predictor:
-            predictions = self.predictor.predict(context)
-        else:
-            predictions = {}
-        
-        # --- 5. Risk Engine ---
-        if self.risk_engine and final_detection:
-            risk = self.risk_engine.evaluate(context, final_detection)
-        else:
-            risk = RiskScore(value=0.0, confidence=0.0)
-            if final_detection:
-                risk = RiskScore(
-                    value=final_detection.score,
-                    confidence=final_detection.confidence,
-                    components={"detection_score": final_detection.score}
-                )
-        
-        # --- 6. Policy (поддерживаем и синхронную, и асинхронную) ---
-        if self.policy:
-            if hasattr(self.policy, 'decide') and asyncio.iscoroutinefunction(self.policy.decide):
-                decision = await self.policy.decide(context, final_detection, risk)
-            else:
-                decision = self.policy.decide(context, final_detection, risk)
-        else:
-            if final_detection and final_detection.score > 0.3:
-                decision = Decision(
-                    action="pause",
-                    reason=final_detection.reason,
-                    severity=final_detection.score,
-                    confidence=final_detection.confidence,
-                    risk_score=risk.value,
-                    explanation=f"Anomaly detected by {final_detection.source}"
-                )
-            else:
-                decision = Decision(
-                    action="continue",
-                    reason="No anomalies detected",
-                    severity=0.0,
-                    confidence=1.0,
-                    risk_score=0.0,
-                    explanation="All systems nominal"
-                )
-        
-        await self.event_bus.publish_async(Event("decision_made", {"decision": decision}))
-        
-        # --- 7. Memory ---
-        if self.memory:
-            if hasattr(self.memory, 'store') and asyncio.iscoroutinefunction(self.memory.store):
-                await self.memory.store(context, final_detection, decision, risk)
-            else:
-                self.memory.store(context, final_detection, decision, risk)
-        
-        # --- 8. Explainer ---
-        if self.explainer:
-            explanation = self.explainer.explain(context, final_detection, decision, risk)
-            decision.explanation = explanation
-        
-        # --- 9. История ---
+        # Сохраняем в историю
         self.history.append({
             "action_id": action_id,
             "timestamp": time.time(),
