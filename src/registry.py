@@ -5,7 +5,7 @@ Plugin Registry для AFLC
 from typing import Dict, Type, Optional, Any, List
 from dataclasses import dataclass, field
 
-from .core import Detector, AsyncDetector, Correlator, Policy, AsyncPolicy, Predictor, Memory, Explainer
+from .interfaces import Detector, AsyncDetector, Correlator, Policy, AsyncPolicy, Predictor, Memory, Explainer
 
 
 @dataclass
@@ -43,23 +43,23 @@ class PluginRegistry:
     
     def _register_builtins(self):
         from .detectors import RuleDetector, StatisticalDetector
-        from .correlator import Correlator
+        from .correlator import Correlator as DefaultCorrelator
         from .core import DefaultPolicy, SimpleCorrelator
         from .risk import RiskEngine
-        from .explainer import Explainer
-        from .memory import Memory
+        from .explainer import Explainer as DefaultExplainer
+        from .history import MemoryHistory
         
         self.register_detector("rule", RuleDetector, "Rule-based detector")
         self.register_detector("statistical", StatisticalDetector, "EWMA-based adaptive detector")
         
-        self.register_correlator("weighted", Correlator, "Weighted correlation")
+        self.register_correlator("weighted", DefaultCorrelator, "Weighted correlation")
         self.register_correlator("simple", SimpleCorrelator, "Simple max-score correlator")
         
         self.register_policy("default", DefaultPolicy, "Default policy")
         
         self.register_risk_engine("default", RiskEngine, "Default risk engine")
         
-        self.register_memory("default", Memory, "In-memory storage with JSON")
+        self.register_memory("default", MemoryHistory, "In-memory storage")
     
     # --- Регистрация ---
     
@@ -111,26 +111,57 @@ class PluginRegistry:
     
     def create_detector(self, name: str, config: Optional[Dict] = None) -> Optional[Any]:
         cls = self.get_detector(name)
-        return cls(config or {}) if cls else None
+        if not cls:
+            return None
+        # Проверяем, принимает ли конструктор config
+        import inspect
+        sig = inspect.signature(cls.__init__)
+        if 'config' in sig.parameters or len(sig.parameters) > 1:
+            return cls(config or {})
+        return cls()
     
     def create_correlator(self, name: str, config: Optional[Dict] = None) -> Optional[Any]:
         cls = self.get_correlator(name)
+        if not cls:
+            return None
         return cls(config or {}) if cls else None
     
     def create_policy(self, name: str, config: Optional[Dict] = None) -> Optional[Any]:
         cls = self.get_policy(name)
+        if not cls:
+            return None
         return cls(config or {}) if cls else None
     
     def create_memory(self, name: str, config: Optional[Dict] = None) -> Optional[Any]:
         cls = self.get_memory(name)
-        return cls(**(config or {})) if cls else None
+        if not cls:
+            return None
+        import inspect
+        sig = inspect.signature(cls.__init__)
+        # MemoryHistory принимает max_size, storage_file
+        if 'max_size' in sig.parameters or 'storage_file' in sig.parameters:
+            return cls(**(config or {}))
+        return cls(config or {}) if config else cls()
     
     def create_risk_engine(self, name: str, config: Optional[Dict] = None) -> Optional[Any]:
         cls = self.get_risk_engine(name)
+        if not cls:
+            return None
         return cls(config or {}) if cls else None
     
     def list_detectors(self) -> List[str]:
         return list(self._detectors.keys())
+    
+    def list_all(self) -> Dict[str, List[str]]:
+        return {
+            "detectors": list(self._detectors.keys()),
+            "correlators": list(self._correlators.keys()),
+            "policies": list(self._policies.keys()),
+            "predictors": list(self._predictors.keys()),
+            "memory": list(self._memory_backends.keys()),
+            "explainers": list(self._explainers.keys()),
+            "risk_engines": list(self._risk_engines.keys())
+        }
 
 
 # Глобальный экземпляр
