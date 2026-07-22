@@ -2,7 +2,7 @@
 AFLC Bootstrap — центральная точка создания и настройки приложения
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 
 from .application.engine import ExecutionEngine
