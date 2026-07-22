@@ -13,7 +13,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from aflc.bootstrap import create_aflc
-from aflc.domain.enums import ExecutionStatus, DecisionAction
+from aflc.domain.enums import ExecutionStatus, DecisionAction, EventType
 
 
 def main():
@@ -38,8 +38,8 @@ def main():
     def on_decision_made(event):
         print(f"   📨 Событие: DecisionMade (action={event.action.value})")
 
-    event_bus.subscribe(DecisionAction.EXECUTION_CREATED, handler=on_execution_created)
-    event_bus.subscribe(DecisionAction.DECISION_MADE, handler=on_decision_made)
+    event_bus.subscribe(EventType.EXECUTION_CREATED, handler=on_execution_created)
+    event_bus.subscribe(EventType.DECISION_MADE, handler=on_decision_made)
 
     print("✅ Подписки созданы")
 
@@ -55,10 +55,9 @@ def main():
     print(f"   Execution ID: {execution.execution_id}")
     print(f"   Status: {execution.status.value}")
 
-    # --- 4. Переводим в состояние PENDING и RUNNING ---
+    # --- 4. Переводим в состояние PENDING и RUNNING через engine ---
     print("\n🔄 4. Перевод в состояние RUNNING...")
-    execution.submit()
-    execution.start_processing()
+    engine.start_processing(execution.execution_id)
     print(f"   Status: {execution.status.value}")
 
     # --- 5. Добавляем наблюдения ---
@@ -101,7 +100,7 @@ def main():
 
     # --- 7. Завершаем обработку ---
     print("\n⚙️ 7. Завершение обработки...")
-    execution.complete_processing()
+    engine.complete_processing(execution.execution_id)
     print(f"   Status: {execution.status.value}")
 
     # --- 8. Оценка риска ---
