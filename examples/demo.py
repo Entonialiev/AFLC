@@ -1,5 +1,5 @@
 """
-AFLC Demo — RuleDetector + StatisticalDetector + Correlator
+AFLC Demo — Full Pipeline with Risk Engine
 """
 
 import sys
@@ -10,18 +10,19 @@ sys.path.append('../src')
 from core import AdaptiveFeedbackLoopCore, DefaultPolicy
 from detectors import RuleDetector, StatisticalDetector
 from correlator import Correlator
+from risk import RiskEngine
 
 
 def main():
-    print("🔁 AFLC Demo — Full Pipeline")
-    print("-" * 50)
+    print("🔁 AFLC Demo — Full Pipeline with Risk Engine")
+    print("-" * 60)
     
-    # Создаём AFLC со всеми компонентами
     flc = (
         AdaptiveFeedbackLoopCore(agent_id="demo-agent")
         .register_detector(RuleDetector())
         .register_detector(StatisticalDetector(config={"z_score_threshold": 2.5}))
         .register_correlator(Correlator(config={"strategy": "weighted"}))
+        .register_risk_engine(RiskEngine())
         .register_policy(DefaultPolicy())
     )
     
@@ -29,7 +30,7 @@ def main():
         time.sleep(delay)
         return {"status": "ok", "data": "x" * size}
     
-    # Фаза обучения (30 нормальных запросов)
+    # Фаза обучения
     print("\n📚 Фаза обучения (30 запросов)...")
     for i in range(30):
         delay = random.uniform(0.04, 0.08)
@@ -37,35 +38,27 @@ def main():
     
     print("✅ Обучение завершено\n")
     
-    # Нормальные запросы
-    print("🟢 Нормальные запросы:")
-    for i in range(5):
-        delay = random.uniform(0.05, 0.07)
-        decision = flc.execute(my_action, delay, size=1024, endpoint="/api/users", method="GET")
-        print(f"  {i+1}: {decision.action} (severity: {decision.severity:.2f})")
+    # Сценарии
+    scenarios = [
+        ("/api/public", "GET", "guest", 0.05, "🟢 Низкий риск"),
+        ("/api/users", "POST", "user", 0.3, "🟡 Средний риск"),
+        ("/api/admin/delete", "DELETE", "admin", 0.3, "🔴 Высокий риск"),
+        ("/api/admin/delete", "DELETE", "admin", 3.0, "🔴 Критический риск")
+    ]
     
-    # Аномальные запросы
-    print("\n🔴 Аномальные запросы:")
+    for endpoint, method, user, delay, risk_label in scenarios:
+        decision = flc.execute(
+            my_action, delay, size=1024,
+            endpoint=endpoint,
+            method=method,
+            user_id=user
+        )
+        print(f"{risk_label}: {endpoint} [{method}] user={user}")
+        print(f"  → {decision.action} (severity: {decision.severity:.2f}, risk: {decision.risk_score:.2f})")
+        print(f"  Причина: {decision.reason}")
+        print()
     
-    # Аномалия 1: Сильная задержка
-    print("  1. Сильная задержка (3000ms):")
-    decision = flc.execute(my_action, 3.0, size=1024, endpoint="/api/users", method="GET")
-    print(f"     → {decision.action}")
-    print(f"     Причина: {decision.reason}")
-    
-    # Аномалия 2: Резкий скачок размера
-    print("  2. Резкий скачок размера (100KB):")
-    def big_action():
-        time.sleep(0.05)
-        return {"status": "ok", "data": "x" * 100000}
-    decision = flc.execute(big_action, endpoint="/api/users", method="GET")
-    print(f"     → {decision.action}")
-    print(f"     Причина: {decision.reason}")
-    
-    # Статистика
-    print(f"\n📊 Статистика:")
-    print(f"  Всего действий: {flc.action_counter}")
-    print(f"  Детекторов: {len(flc.detectors)}")
+    print(f"📊 Статистика: {flc.get_stats()}")
 
 
 if __name__ == "__main__":
